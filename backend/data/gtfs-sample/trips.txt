@@ -1,0 +1,8 @@
+route_id,service_id,trip_id,trip_headsign,direction_id,shape_id
+L1,ALL,L1_0,Retiro,0,SH_L1_0
+L1,ALL,L1_1,Príncipe Pío,1,SH_L1_1
+L2,ALL,L2_0,Embajadores,0,
+L2,ALL,L2_1,Ópera,1,
+L2,ALL,L2_N,Embajadores (nocturno),0,
+L3,ALL,L3_0,Atocha,0,
+L3,ALL,L3_1,Plaza de España,1,

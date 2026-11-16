@@ -1,0 +1,13 @@
+stop_id,stop_code,stop_name,stop_lat,stop_lon,location_type,parent_station
+S1,101,Sol,40.4169,-3.7035,0,
+S2,102,Callao,40.4200,-3.7058,0,
+S3,103,Plaza de España,40.4233,-3.7122,0,
+S4,104,Ópera,40.4180,-3.7096,0,
+S5,105,Tirso de Molina,40.4124,-3.7046,0,
+S6,106,Atocha,40.4066,-3.6907,0,
+S7,107,Cibeles,40.4193,-3.6930,0,
+S8,108,Retiro,40.4200,-3.6830,0,
+S9,109,Gran Vía,40.4197,-3.7016,0,
+S10,110,Lavapiés,40.4089,-3.7010,0,
+S11,111,Príncipe Pío,40.4210,-3.7200,0,
+S12,112,Embajadores,40.4045,-3.7030,0,

@@ -1,0 +1,4 @@
+route_id,agency_id,route_short_name,route_long_name,route_type,route_color,route_text_color
+L1,DEMO,1,Príncipe Pío - Retiro,3,D32F2F,FFFFFF
+L2,DEMO,2,Ópera - Embajadores,3,1976D2,FFFFFF
+L3,DEMO,T3,Plaza de España - Atocha,0,388E3C,FFFFFF
