@@ -4,3 +4,4 @@ dist/
 backend/data/cache/
 backend/data/gtfs/
 *.log
+coverage/

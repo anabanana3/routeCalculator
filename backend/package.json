@@ -7,23 +7,28 @@
     "dev": "tsx watch src/index.ts",
     "build": "tsc -p tsconfig.json",
     "start": "node dist/index.js",
-    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "typecheck": "tsc -p tsconfig.test.json",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
     "sample-gtfs": "node scripts/generate-sample-gtfs.mjs"
   },
   "dependencies": {
-    "adm-zip": "^0.5.16",
+    "adm-zip": "^0.6.1",
     "cors": "^2.8.5",
-    "csv-parse": "^5.6.0",
+    "csv-parse": "^7.0.3",
     "dotenv": "^16.4.7",
     "express": "^5.1.0",
-    "zod": "^3.24.2"
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "@types/adm-zip": "^0.5.7",
     "@types/cors": "^2.8.17",
     "@types/express": "^5.0.1",
     "@types/node": "^22.13.10",
+    "@vitest/coverage-v8": "^5.1.1",
     "tsx": "^4.19.3",
-    "typescript": "^5.8.2"
+    "typescript": "^5.8.2",
+    "vitest": "^5.1.1"
   }
 }

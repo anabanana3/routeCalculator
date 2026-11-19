@@ -1,20 +1,17 @@
-import { createApp } from './app.js';
-import { config } from './config.js';
-import { GtfsService } from './gtfs/service.js';
+import 'dotenv/config';
+import { loadConfig } from './infrastructure/config/env-config.js';
+import { createLogger, setLogLevel } from './infrastructure/logging/console-logger.js';
+import { startServer } from './main.js';
 
-const gtfs = new GtfsService(config);
-const app = createApp(gtfs, config.routing);
+const config = loadConfig(process.env);
+setLogLevel(config.logLevel);
+const logger = createLogger('server');
 
-const server = app.listen(config.port, () => {
-  console.log(`API escuchando en http://localhost:${config.port}`);
-});
-
-// La carga del GTFS no bloquea el arranque del servidor; mientras tanto /api/plan responde 503.
-void gtfs.start();
+const running = await startServer(config);
 
 const shutdown = () => {
-  gtfs.stop();
-  server.close(() => process.exit(0));
+  logger.info('Deteniendo el servidor');
+  void running.close().then(() => process.exit(0));
 };
 process.on('SIGINT', shutdown);
 process.on('SIGTERM', shutdown);

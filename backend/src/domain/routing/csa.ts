@@ -1,0 +1,176 @@
+import type { TransitNetwork } from '../network/model.js';
+import { SECONDS_PER_DAY } from '../time/service-time.js';
+
+export const INF = 0x3fffffff;
+
+/** Parada alcanzable a pie desde el origen o hacia el destino. */
+export interface Access {
+  stop: number;
+  seconds: number;
+  meters: number;
+}
+
+export type RawLeg =
+  | { kind: 'access'; toStop: number; seconds: number; meters: number }
+  | { kind: 'egress'; fromStop: number; seconds: number; meters: number }
+  | { kind: 'transfer'; fromStop: number; toStop: number; seconds: number; meters: number }
+  | { kind: 'transit'; board: number; alight: number; shift: number };
+
+export interface RawJourney {
+  legs: RawLeg[];
+  /** Hora de llegada al destino (segundos desde la base del día de servicio). */
+  arrival: number;
+}
+
+export interface ScanParams {
+  /** Hora de salida en segundos desde la base del día de servicio consultado. */
+  departure: number;
+  access: Access[];
+  egress: Map<number, Access>;
+  /** Servicios activos para el día anterior, el consultado y el siguiente. */
+  activeByDayOffset: [Uint8Array, Uint8Array, Uint8Array];
+  minTransferSeconds: number;
+  maxSearchSeconds: number;
+}
+
+export function lowerBound(arr: Int32Array, count: number, value: number): number {
+  let lo = 0;
+  let hi = count;
+  while (lo < hi) {
+    const mid = (lo + hi) >>> 1;
+    if (arr[mid] < value) lo = mid + 1;
+    else hi = mid;
+  }
+  return lo;
+}
+
+/**
+ * Connection Scan Algorithm (llegada más temprana).
+ * Recorre las conexiones ordenadas por hora de salida mezclando tres "flujos":
+ * los servicios del día anterior (horarios > 24h), del día consultado y del siguiente.
+ */
+export function scanEarliestArrival(data: TransitNetwork, p: ScanParams): RawJourney | null {
+  const C = data.connections;
+  const nStops = data.stops.length;
+
+  const arrival = new Int32Array(nStops).fill(INF);
+  const viaConn = new Int32Array(nStops).fill(-1);
+  const viaBoard = new Int32Array(nStops).fill(-1);
+  const viaShift = new Int32Array(nStops);
+  const viaFoot = new Int32Array(nStops).fill(-1);
+  const viaFootSec = new Int32Array(nStops);
+  const viaFootMeters = new Int32Array(nStops);
+  const tripBoard = new Int32Array(data.trips.length * 3).fill(-1);
+
+  const accessByStop = new Map<number, Access>();
+  for (const a of p.access) {
+    const t = p.departure + a.seconds;
+    if (t < arrival[a.stop]) {
+      arrival[a.stop] = t;
+      accessByStop.set(a.stop, a);
+    }
+  }
+
+  let best = INF;
+  let bestStop = -1;
+  const limit = p.departure + p.maxSearchSeconds;
+
+  const streams = [-1, 0, 1].map((offset, k) => {
+    const shift = offset * SECONDS_PER_DAY;
+    return { shift, active: p.activeByDayOffset[k], pos: lowerBound(C.depTime, C.count, p.departure - shift) };
+  });
+
+  const relaxEgress = (stop: number, time: number) => {
+    const eg = p.egress.get(stop);
+    if (eg && time + eg.seconds < best) {
+      best = time + eg.seconds;
+      bestStop = stop;
+    }
+  };
+
+  for (;;) {
+    let sel = -1;
+    let selTime = INF;
+    for (let k = 0; k < 3; k++) {
+      const s = streams[k];
+      while (s.pos < C.count && s.active[data.tripService[C.trip[s.pos]]] === 0) s.pos++;
+      if (s.pos < C.count) {
+        const t = C.depTime[s.pos] + s.shift;
+        if (t < selTime) {
+          selTime = t;
+          sel = k;
+        }
+      }
+    }
+    if (sel === -1 || selTime >= best || selTime > limit) break;
+
+    const stream = streams[sel];
+    const c = stream.pos++;
+    const key = C.trip[c] * 3 + sel;
+    let board = tripBoard[key];
+
+    if (board === -1) {
+      const ds = C.depStop[c];
+      const a = arrival[ds];
+      if (a !== INF) {
+        // Se exige un tiempo mínimo de transbordo si se llega en otro vehículo a la misma parada.
+        const slack = viaConn[ds] !== -1 ? p.minTransferSeconds : 0;
+        if (a + slack <= selTime) {
+          board = c;
+          tripBoard[key] = c;
+        }
+      }
+    }
+    if (board === -1) continue;
+
+    const as = C.arrStop[c];
+    const at = C.arrTime[c] + stream.shift;
+    if (at >= arrival[as]) continue;
+
+    arrival[as] = at;
+    viaConn[as] = c;
+    viaBoard[as] = board;
+    viaShift[as] = stream.shift;
+    viaFoot[as] = -1;
+    accessByStop.delete(as);
+    relaxEgress(as, at);
+
+    for (const fp of data.footpaths[as]) {
+      const ft = at + fp.seconds;
+      if (ft < arrival[fp.to]) {
+        arrival[fp.to] = ft;
+        viaConn[fp.to] = -1;
+        viaFoot[fp.to] = as;
+        viaFootSec[fp.to] = fp.seconds;
+        viaFootMeters[fp.to] = fp.meters;
+        accessByStop.delete(fp.to);
+        relaxEgress(fp.to, ft);
+      }
+    }
+  }
+
+  if (bestStop === -1) return null;
+
+  // Reconstrucción del viaje hacia atrás.
+  const legs: RawLeg[] = [];
+  const eg = p.egress.get(bestStop)!;
+  legs.push({ kind: 'egress', fromStop: bestStop, seconds: eg.seconds, meters: eg.meters });
+  let s = bestStop;
+  for (let guard = 0; guard < 1000; guard++) {
+    if (viaConn[s] !== -1) {
+      const board = viaBoard[s];
+      legs.push({ kind: 'transit', board, alight: viaConn[s], shift: viaShift[s] });
+      s = C.depStop[board];
+    } else if (viaFoot[s] !== -1) {
+      legs.push({ kind: 'transfer', fromStop: viaFoot[s], toStop: s, seconds: viaFootSec[s], meters: viaFootMeters[s] });
+      s = viaFoot[s];
+    } else {
+      const a = accessByStop.get(s);
+      if (!a) return null;
+      legs.push({ kind: 'access', toStop: s, seconds: a.seconds, meters: a.meters });
+      break;
+    }
+  }
+  legs.reverse();
+  return { legs, arrival: best };
+}
