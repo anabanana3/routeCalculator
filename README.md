@@ -17,7 +17,7 @@ El usuario elige el origen y el destino en un mapa, escribiendo una dirección o
 
 Hay dos partes:
 
-- **Backend**: API REST que carga los datos GTFS en memoria y calcula las rutas con el algoritmo *Connection Scan* (CSA). Los datos se pueden leer de una carpeta o un `.zip` local, o descargar periódicamente de una URL. Opcionalmente consume feeds **GTFS-Realtime** (retrasos, cancelaciones, posición de los vehículos y avisos).
+- **Backend**: API REST que carga los datos GTFS en memoria y calcula las rutas con el algoritmo _Connection Scan_ (CSA). Los datos se pueden leer de una carpeta o un `.zip` local, o descargar periódicamente de una URL. Opcionalmente consume feeds **GTFS-Realtime** (retrasos, cancelaciones, posición de los vehículos y avisos).
 - **Frontend**: aplicación web de una sola página con un mapa de OpenStreetMap, sustituible por otro proveedor, y un panel de búsqueda y resultados.
 
 > Sin GTFS-Realtime configurado se usan los horarios **programados** del GTFS estático. Con él, las rutas se calculan con las horas **previstas** y se muestran retrasos, avisos y vehículos en el mapa.
@@ -26,16 +26,16 @@ Hay dos partes:
 
 ## b. Stack tecnológico
 
-| Parte | Tecnologías |
-| --- | --- |
-| Lenguaje | **TypeScript** en todo el proyecto |
-| Backend | **Node.js** + **Express 5**, validación con **Zod**, lectura de CSV en streaming con **csv-parse**, zips con **adm-zip**, configuración con **dotenv** |
-| Frontend | **React 19** + **Vite 6**, **Material UI (MUI) 7** como librería de diseño, **Leaflet** + **react-leaflet** para el mapa |
-| Mapa | Teselas de **OpenStreetMap**, configurables por variables de entorno |
-| Geocodificación | **Photon** (por defecto) o **Nominatim**, ambos sobre datos de OpenStreetMap |
-| Datos | Feeds **GTFS** estáticos y, opcionalmente, **GTFS-Realtime** (protobuf, decodificado con **gtfs-realtime-bindings**) |
-| Tests | **Vitest**, **Testing Library** y **jsdom**, con cobertura mediante `@vitest/coverage-v8` |
-| Monorepo | **npm workspaces** (`backend`, `frontend`) + **concurrently** para arrancar ambos a la vez |
+| Parte           | Tecnologías                                                                                                                                            |
+| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Lenguaje        | **TypeScript** en todo el proyecto                                                                                                                     |
+| Backend         | **Node.js** + **Express 5**, validación con **Zod**, lectura de CSV en streaming con **csv-parse**, zips con **adm-zip**, configuración con **dotenv** |
+| Frontend        | **React 19** + **Vite 6**, **Material UI (MUI) 7** como librería de diseño, **Leaflet** + **react-leaflet** para el mapa                               |
+| Mapa            | Teselas de **OpenStreetMap**, configurables por variables de entorno                                                                                   |
+| Geocodificación | **Photon** (por defecto) o **Nominatim**, ambos sobre datos de OpenStreetMap                                                                           |
+| Datos           | Feeds **GTFS** estáticos y, opcionalmente, **GTFS-Realtime** (protobuf, decodificado con **gtfs-realtime-bindings**)                                   |
+| Tests           | **Vitest**, **Testing Library** y **jsdom**, con cobertura mediante `@vitest/coverage-v8`                                                              |
+| Monorepo        | **npm workspaces** (`backend`, `frontend`) + **concurrently** para arrancar ambos a la vez                                                             |
 
 ---
 
@@ -78,34 +78,34 @@ DEBUG_IGNORE_CALENDAR=true
 
 Variables principales de `backend/.env` (todas están documentadas en `backend/.env.example`):
 
-| Variable | Descripción | Por defecto |
-| --- | --- | --- |
-| `PORT` / `HOST` | Puerto e interfaz de escucha de la API | `3000` / todas |
-| `LOG_LEVEL` | `debug`, `info`, `warn`, `error` o `silent` | `info` |
-| `GTFS_SOURCE` | `local` o `url` | `local` |
-| `GTFS_LOCAL_PATH` | Carpeta con los `.txt` o ruta a un `.zip` | `./data/gtfs-sample` |
-| `GTFS_URL` | URL que devuelve el zip GTFS | — |
-| `GTFS_REFRESH_MINUTES` | Cada cuánto se recargan los datos (0 = nunca) | `1440` |
-| `TIMEZONE` | Zona horaria; si se deja vacía, se usa la de `agency.txt` | — |
-| `MAX_WALK_METERS`, `MAX_TRANSFER_METERS`, `MAX_DIRECT_WALK_METERS`, `WALK_SPEED_MPS`, `WALK_DISTANCE_FACTOR`, `MIN_TRANSFER_SECONDS`, `MAX_ITINERARIES`, `MAX_SEARCH_HOURS` | Parámetros del cálculo de rutas | ver `.env.example` |
-| `DEBUG_IGNORE_CALENDAR` | Ignora el calendario de servicios, útil con feeds caducados | `false` |
-| `GEOCODER_*` | Proveedor, URL, idioma y zona del buscador de direcciones | Photon |
-| `CORS_ORIGINS`, `ADMIN_TOKEN`, `RATE_LIMIT_*`, `TRUST_PROXY` | Seguridad de la API | ver `.env.example` |
-| `GTFS_DOWNLOAD_TIMEOUT_MS`, `GTFS_MAX_DOWNLOAD_MB`, `GTFS_ZIP_MAX_*` | Límites de descarga y descompresión del GTFS | ver `.env.example` |
-| `GTFS_RT_TRIP_UPDATES_URL`, `GTFS_RT_VEHICLE_POSITIONS_URL`, `GTFS_RT_ALERTS_URL` | URLs de los feeds GTFS-Realtime. Vacías = sin tiempo real. Si coinciden, se descargan una sola vez | — |
-| `GTFS_RT_REFRESH_SECONDS` | Cada cuánto se descargan los feeds en tiempo real (mínimo 5) | `30` |
-| `GTFS_RT_IDLE_MINUTES` | Minutos sin peticiones tras los que se pausa la descarga (0 = nunca) | `10` |
-| `GTFS_RT_MAX_AGE_SECONDS` | Antigüedad máxima de los datos para usarlos (0 = sin límite) | `300` |
-| `GTFS_RT_HEADERS` | Cabeceras extra en JSON, p. ej. `{"x-api-key":"..."}` | — |
-| `GTFS_RT_TIMEOUT_MS`, `GTFS_RT_MAX_DOWNLOAD_MB`, `GTFS_RT_LANGUAGE` | Límites de descarga e idioma preferido de los avisos | `10000`, `20`, `es` |
+| Variable                                                                                                                                                                    | Descripción                                                                                        | Por defecto          |
+| --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- | -------------------- |
+| `PORT` / `HOST`                                                                                                                                                             | Puerto e interfaz de escucha de la API                                                             | `3000` / todas       |
+| `LOG_LEVEL`                                                                                                                                                                 | `debug`, `info`, `warn`, `error` o `silent`                                                        | `info`               |
+| `GTFS_SOURCE`                                                                                                                                                               | `local` o `url`                                                                                    | `local`              |
+| `GTFS_LOCAL_PATH`                                                                                                                                                           | Carpeta con los `.txt` o ruta a un `.zip`                                                          | `./data/gtfs-sample` |
+| `GTFS_URL`                                                                                                                                                                  | URL que devuelve el zip GTFS                                                                       | —                    |
+| `GTFS_REFRESH_MINUTES`                                                                                                                                                      | Cada cuánto se recargan los datos (0 = nunca)                                                      | `1440`               |
+| `TIMEZONE`                                                                                                                                                                  | Zona horaria; si se deja vacía, se usa la de `agency.txt`                                          | —                    |
+| `MAX_WALK_METERS`, `MAX_TRANSFER_METERS`, `MAX_DIRECT_WALK_METERS`, `WALK_SPEED_MPS`, `WALK_DISTANCE_FACTOR`, `MIN_TRANSFER_SECONDS`, `MAX_ITINERARIES`, `MAX_SEARCH_HOURS` | Parámetros del cálculo de rutas                                                                    | ver `.env.example`   |
+| `DEBUG_IGNORE_CALENDAR`                                                                                                                                                     | Ignora el calendario de servicios, útil con feeds caducados                                        | `false`              |
+| `GEOCODER_*`                                                                                                                                                                | Proveedor, URL, idioma y zona del buscador de direcciones                                          | Photon               |
+| `CORS_ORIGINS`, `ADMIN_TOKEN`, `RATE_LIMIT_*`, `TRUST_PROXY`                                                                                                                | Seguridad de la API                                                                                | ver `.env.example`   |
+| `GTFS_DOWNLOAD_TIMEOUT_MS`, `GTFS_MAX_DOWNLOAD_MB`, `GTFS_ZIP_MAX_*`                                                                                                        | Límites de descarga y descompresión del GTFS                                                       | ver `.env.example`   |
+| `GTFS_RT_TRIP_UPDATES_URL`, `GTFS_RT_VEHICLE_POSITIONS_URL`, `GTFS_RT_ALERTS_URL`                                                                                           | URLs de los feeds GTFS-Realtime. Vacías = sin tiempo real. Si coinciden, se descargan una sola vez | —                    |
+| `GTFS_RT_REFRESH_SECONDS`                                                                                                                                                   | Cada cuánto se descargan los feeds en tiempo real (mínimo 5)                                       | `30`                 |
+| `GTFS_RT_IDLE_MINUTES`                                                                                                                                                      | Minutos sin peticiones tras los que se pausa la descarga (0 = nunca)                               | `10`                 |
+| `GTFS_RT_MAX_AGE_SECONDS`                                                                                                                                                   | Antigüedad máxima de los datos para usarlos (0 = sin límite)                                       | `300`                |
+| `GTFS_RT_HEADERS`                                                                                                                                                           | Cabeceras extra en JSON, p. ej. `{"x-api-key":"..."}`                                              | —                    |
+| `GTFS_RT_TIMEOUT_MS`, `GTFS_RT_MAX_DOWNLOAD_MB`, `GTFS_RT_LANGUAGE`                                                                                                         | Límites de descarga e idioma preferido de los avisos                                               | `10000`, `20`, `es`  |
 
 Variables de `frontend/.env`:
 
-| Variable | Descripción |
-| --- | --- |
-| `VITE_API_URL` | URL base de la API. Vacía = mismo origen; en desarrollo se usa el proxy de Vite |
-| `VITE_TILE_URL`, `VITE_TILE_ATTRIBUTION` | Proveedor de teselas del mapa (OpenStreetMap por defecto) |
-| `VITE_DEFAULT_LAT`, `VITE_DEFAULT_LON` | Centro inicial del mapa si el backend aún no ha devuelto la zona del GTFS |
+| Variable                                 | Descripción                                                                     |
+| ---------------------------------------- | ------------------------------------------------------------------------------- |
+| `VITE_API_URL`                           | URL base de la API. Vacía = mismo origen; en desarrollo se usa el proxy de Vite |
+| `VITE_TILE_URL`, `VITE_TILE_ATTRIBUTION` | Proveedor de teselas del mapa (OpenStreetMap por defecto)                       |
+| `VITE_DEFAULT_LAT`, `VITE_DEFAULT_LON`   | Centro inicial del mapa si el backend aún no ha devuelto la zona del GTFS       |
 
 ### Ejecución en desarrollo
 
@@ -122,21 +122,21 @@ Abre http://localhost:5173 en el navegador.
 
 ### Otros comandos
 
-| Comando | Qué hace |
-| --- | --- |
-| `npm run build` | Compila el backend (`backend/dist`) y genera la web estática (`frontend/dist`) |
-| `npm run start -w backend` | Ejecuta el backend compilado |
-| `npm run preview -w frontend` | Sirve la web compilada para probarla |
-| `npm run typecheck` | Comprobación de tipos de backend y frontend |
-| `npm test` | Ejecuta todos los tests |
-| `npm run test:coverage` | Tests con informe de cobertura (`*/coverage`) |
-| `npm run sample-gtfs -w backend` | Regenera el GTFS de ejemplo |
+| Comando                          | Qué hace                                                                       |
+| -------------------------------- | ------------------------------------------------------------------------------ |
+| `npm run build`                  | Compila el backend (`backend/dist`) y genera la web estática (`frontend/dist`) |
+| `npm run start -w backend`       | Ejecuta el backend compilado                                                   |
+| `npm run preview -w frontend`    | Sirve la web compilada para probarla                                           |
+| `npm run typecheck`              | Comprobación de tipos de backend y frontend                                    |
+| `npm test`                       | Ejecuta todos los tests                                                        |
+| `npm run test:coverage`          | Tests con informe de cobertura (`*/coverage`)                                  |
+| `npm run sample-gtfs -w backend` | Regenera el GTFS de ejemplo                                                    |
 
 ---
 
 ## d. Estructura del proyecto
 
-Backend y frontend siguen una **arquitectura por capas** (estilo hexagonal): el dominio no depende de frameworks y la infraestructura se conecta a través de *puertos* (interfaces).
+Backend y frontend siguen una **arquitectura por capas** (estilo hexagonal): el dominio no depende de frameworks y la infraestructura se conecta a través de _puertos_ (interfaces).
 
 ```
 routeCalculator/
@@ -198,19 +198,20 @@ routeCalculator/
 
 ### Cálculo de rutas (backend)
 
-- **Algoritmo *Connection Scan* (CSA)**: al cargar el feed, todos los tramos parada→parada de todos los viajes se ordenan por hora de salida. En cada consulta se recorren una sola vez para obtener la **llegada más temprana**, en decenas de milisegundos con una red urbana.
+- **Algoritmo _Connection Scan_ (CSA)**: al cargar el feed, todos los tramos parada→parada de todos los viajes se ordenan por hora de salida. En cada consulta se recorren una sola vez para obtener la **llegada más temprana**, en decenas de milisegundos con una red urbana.
 - **Tramos a pie**:
   - acceso desde el origen a las paradas cercanas y desde las paradas al destino;
   - transbordos andando entre paradas próximas;
   - opción de ir solo andando en trayectos cortos.
 
   El tiempo se calcula como distancia en línea recta × `WALK_DISTANCE_FACTOR` (1,25) ÷ `WALK_SPEED_MPS` (1,25 m/s).
+
 - **Transbordos** con tiempo mínimo configurable (`MIN_TRANSFER_SECONDS`).
 - **Calendarios**: días de la semana (`calendar.txt`) y excepciones (`calendar_dates.txt`). Se tienen en cuenta horarios de más de 24:00 (servicios nocturnos del día anterior) y servicios del día siguiente.
 - **Varias alternativas**: se repite la búsqueda saliendo más tarde y se descartan las peores. Cada una incluye el tiempo total, a pie y de espera, y el número de transbordos.
 - **Información de cada tramo**:
   - línea con su color;
-  - sentido (*headsign*);
+  - sentido (_headsign_);
   - paradas intermedias con su hora de paso;
   - trazado real desde `shapes.txt`, o uniendo paradas si no existe;
   - **próximas salidas** de la misma línea desde la parada de subida.
@@ -265,7 +266,8 @@ Opcional: se activa al configurar al menos una de las URLs `GTFS_RT_*`. Se admit
   - parada de bajada.
 
   Al pulsar un tramo, el mapa se centra en él.
-- **Mapa de la ruta**: tramos a pie con línea punteada, tramos en vehículo con el color de la línea y paradas con su hora en un *tooltip*.
+
+- **Mapa de la ruta**: tramos a pie con línea punteada, tramos en vehículo con el color de la línea y paradas con su hora en un _tooltip_.
 - **Tiempo real** (si el backend lo tiene configurado):
   - horas previstas en verde (puntual), rojo (retraso) o naranja (adelanto), con la hora programada tachada debajo;
   - "Tiempo real · 3 min de retraso" en la lista y en el detalle, y número de avisos de cada alternativa;
@@ -274,26 +276,27 @@ Opcional: se activa al configurar al menos una de las URLs `GTFS_RT_*`. Se admit
   - con "Salir ahora", la ruta se recalcula cada minuto sin perder el itinerario que se está viendo.
 
   Solo se consulta mientras la pestaña está visible y para itinerarios en curso o que empiezan pronto.
+
 - Horas mostradas en la **zona horaria del feed**.
 
 ### API REST
 
-| Método | Ruta | Descripción |
-| --- | --- | --- |
-| `GET` | `/api/health` | Estado del servicio y si el GTFS está cargado |
-| `GET` | `/api/gtfs` | Información del feed: origen, última carga, estadísticas, zona geográfica, zona horaria y estado del tiempo real |
-| `POST` | `/api/gtfs/reload` | Fuerza la recarga del feed. Requiere `Authorization: Bearer <ADMIN_TOKEN>`; si `ADMIN_TOKEN` está vacío, el endpoint está deshabilitado |
-| `POST` | `/api/plan` | Calcula itinerarios. El tiempo de cálculo se devuelve en la cabecera `X-Compute-Time-Ms`. Con tiempo real, los tramos incluyen `realtime` (horas programadas y retrasos) y `alerts`, y la respuesta `realtimeUpdatedAt` |
-| `GET` | `/api/geocode/search?q=…[&lat=…&lon=…&limit=…]` | Busca direcciones, lugares y paradas |
-| `GET` | `/api/geocode/reverse?lat=…&lon=…` | Nombre de un punto |
-| `GET` | `/api/realtime/vehicles?tripIds=…` | Posición de los vehículos de hasta 20 viajes (separados por comas). Lista vacía sin tiempo real |
+| Método | Ruta                                            | Descripción                                                                                                                                                                                                             |
+| ------ | ----------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET`  | `/api/health`                                   | Estado del servicio y si el GTFS está cargado                                                                                                                                                                           |
+| `GET`  | `/api/gtfs`                                     | Información del feed: origen, última carga, estadísticas, zona geográfica, zona horaria y estado del tiempo real                                                                                                        |
+| `POST` | `/api/gtfs/reload`                              | Fuerza la recarga del feed. Requiere `Authorization: Bearer <ADMIN_TOKEN>`; si `ADMIN_TOKEN` está vacío, el endpoint está deshabilitado                                                                                 |
+| `POST` | `/api/plan`                                     | Calcula itinerarios. El tiempo de cálculo se devuelve en la cabecera `X-Compute-Time-Ms`. Con tiempo real, los tramos incluyen `realtime` (horas programadas y retrasos) y `alerts`, y la respuesta `realtimeUpdatedAt` |
+| `GET`  | `/api/geocode/search?q=…[&lat=…&lon=…&limit=…]` | Busca direcciones, lugares y paradas                                                                                                                                                                                    |
+| `GET`  | `/api/geocode/reverse?lat=…&lon=…`              | Nombre de un punto                                                                                                                                                                                                      |
+| `GET`  | `/api/realtime/vehicles?tripIds=…`              | Posición de los vehículos de hasta 20 viajes (separados por comas). Lista vacía sin tiempo real                                                                                                                         |
 
 Ejemplo de petición a `/api/plan`:
 
 ```json
 {
   "from": { "lat": 38.26208, "lon": -0.70072 },
-  "to":   { "lat": 38.26155, "lon": -0.71986 },
+  "to": { "lat": 38.26155, "lon": -0.71986 },
   "dateTime": "2026-07-27T10:00:00+02:00",
   "maxItineraries": 3
 }
@@ -328,3 +331,10 @@ La única operación protegida es `POST /api/gtfs/reload`, que no es un acceso d
 ```bash
 curl -X POST http://localhost:3000/api/gtfs/reload -H "Authorization: Bearer token-de-prueba-1234"
 ```
+
+## e. Enlaces
+
+Repositorio -> https://github.com/anabanana3/routeCalculator
+Despliegue -> https://route-calculator-sigma.vercel.app/
+Presentación -> https://drive.google.com/file/d/1cglqPBey88-9OYYK1e6bAHduw_FsG9sZ/view?usp=sharing
+Vídeo -> https://drive.google.com/file/d/1VxRgUcumSLf0iE6GeJfOQHwNEChneGCm/view?usp=sharing
