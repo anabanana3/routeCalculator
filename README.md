@@ -334,7 +334,7 @@ curl -X POST http://localhost:3000/api/gtfs/reload -H "Authorization: Bearer tok
 
 ## e. Enlaces
 
-Repositorio -> https://github.com/anabanana3/routeCalculator
-Despliegue -> https://route-calculator-sigma.vercel.app/
-Presentación -> https://drive.google.com/file/d/1cglqPBey88-9OYYK1e6bAHduw_FsG9sZ/view?usp=sharing
-Vídeo -> https://drive.google.com/file/d/1VxRgUcumSLf0iE6GeJfOQHwNEChneGCm/view?usp=sharing
+- Repositorio -> https://github.com/anabanana3/routeCalculator
+- Despliegue -> https://route-calculator-sigma.vercel.app/
+- Presentación -> https://drive.google.com/file/d/1cglqPBey88-9OYYK1e6bAHduw_FsG9sZ/view?usp=sharing
+- Vídeo -> https://drive.google.com/file/d/1VxRgUcumSLf0iE6GeJfOQHwNEChneGCm/view?usp=sharing
