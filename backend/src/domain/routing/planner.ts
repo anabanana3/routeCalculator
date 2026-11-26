@@ -1,7 +1,8 @@
 import { haversineMeters, type LatLon } from '../geo/geo.js';
 import type { TransitNetwork } from '../network/model.js';
+import type { RealtimeIndex } from '../realtime/realtime-index.js';
 import { addDays, epochToServiceDate, serviceDayBaseEpoch } from '../time/service-time.js';
-import { type Access, type RawJourney, scanEarliestArrival } from './csa.js';
+import { type Access, type RawJourney, type RealtimeScan, scanEarliestArrival } from './csa.js';
 import { removeDominated } from './dominance.js';
 import { ItineraryAssembler, type QueryContext } from './itinerary-assembler.js';
 import type { Itinerary, NoRouteReason, TripPlan, TripQuery } from './itinerary.js';
@@ -21,14 +22,18 @@ export class Planner {
     this.assembler = new ItineraryAssembler(network);
   }
 
-  plan(query: TripQuery): TripPlan {
+  /** Calcula el plan; si se pasan datos en tiempo real de esta misma red, se usan sus horas previstas. */
+  plan(query: TripQuery, realtime?: RealtimeIndex | null): TripPlan {
     const { timezone } = this.network;
     const when = query.departureTime;
     const date = epochToServiceDate(when, timezone);
+    const dates: [string, string, string] = [addDays(date, -1), date, addDays(date, 1)];
     const ctx: QueryContext = {
       base: serviceDayBaseEpoch(date, timezone),
-      actives: [this.calendar.activeOn(addDays(date, -1)), this.calendar.activeOn(date), this.calendar.activeOn(addDays(date, 1))],
+      actives: [this.calendar.activeOn(dates[0]), this.calendar.activeOn(dates[1]), this.calendar.activeOn(dates[2])],
     };
+    const rt = realtime && realtime.network === this.network ? realtime : null;
+    if (rt) ctx.realtime = { index: rt, dates };
     const maxItineraries = clampItineraries(query.maxItineraries ?? this.opts.maxItineraries);
 
     const access = this.nearbyStops(query.from);
@@ -52,6 +57,7 @@ export class Planner {
 
     const plan: TripPlan = { requestedAt: when, timezone, itineraries };
     if (itineraries.length === 0) plan.noRouteReason = noRouteReason(access.length, egress.size);
+    if (rt) plan.realtimeUpdatedAt = rt.updatedAt;
     return plan;
   }
 
@@ -63,6 +69,7 @@ export class Planner {
     ctx: QueryContext,
     maxItineraries: number,
   ): RawJourney[] {
+    const realtime = this.realtimeScan(ctx);
     const journeys: RawJourney[] = [];
     let departure = t0;
     // Se buscan más candidatos de los pedidos para luego descartar los dominados.
@@ -74,12 +81,25 @@ export class Planner {
         activeByDayOffset: ctx.actives,
         minTransferSeconds: this.opts.minTransferSeconds,
         maxSearchSeconds: this.opts.maxSearchHours * 3600,
+        realtime,
       });
       if (!j) break;
       journeys.push(j);
-      departure = this.journeyDeparture(j) + 60;
+      departure = this.journeyDeparture(j, ctx) + 60;
     }
     return journeys;
+  }
+
+  private realtimeScan(ctx: QueryContext): RealtimeScan | undefined {
+    const rt = ctx.realtime;
+    if (!rt) return undefined;
+    const { index, dates } = rt;
+    return {
+      connections: index.connections,
+      instanceCount: index.instances.length,
+      baseSec: Math.round(ctx.base / 1000),
+      replaced: [index.replacedOn(dates[0]), index.replacedOn(dates[1]), index.replacedOn(dates[2])],
+    };
   }
 
   /** Paradas alcanzables a pie desde un punto (si no hay ninguna, se amplía el radio al doble). */
@@ -93,12 +113,16 @@ export class Planner {
     });
   }
 
-  private journeyDeparture(j: RawJourney): number {
+  private journeyDeparture(j: RawJourney, ctx: QueryContext): number {
     const C = this.network.connections;
     const firstTransit = j.legs.find((l) => l.kind === 'transit');
     const first = j.legs[0];
     if (!firstTransit || firstTransit.kind !== 'transit') return j.arrival;
     const accessSeconds = first.kind === 'access' ? first.seconds : 0;
+    if (firstTransit.realtime) {
+      const R = ctx.realtime!.index.connections;
+      return Math.round(R.depTime[firstTransit.board] - ctx.base / 1000) - accessSeconds;
+    }
     return C.depTime[firstTransit.board] + firstTransit.shift - accessSeconds;
   }
 }

@@ -37,6 +37,12 @@ describe('GetFeedInfoUseCase', () => {
       ignoreServiceCalendar: true,
     });
   });
+
+  it('incluye el estado del tiempo real', () => {
+    const rt = { enabled: true, refreshSeconds: 30, paused: true, feeds: [] };
+    const uc = new GetFeedInfoUseCase({ current: null, status: () => status() }, false, { status: () => rt });
+    expect(uc.execute().realtime).toBe(rt);
+  });
 });
 
 describe('ReloadFeedUseCase', () => {

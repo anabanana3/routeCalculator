@@ -1,7 +1,19 @@
 import type { GeocodeResult } from '../../domain/geocoding/place.js';
-import type { Itinerary, Leg, NoRouteReason, Place, TripPlan } from '../../domain/routing/itinerary.js';
+import type { AlertInfo, Itinerary, Leg, NoRouteReason, Place, TripPlan } from '../../domain/routing/itinerary.js';
 import type { FeedInfo } from '../../application/use-cases/get-feed-info.js';
-import type { GeocodeResult as GeocodeResultDto, GtfsInfoDto, ItineraryDto, LegDto, PlaceDto, PlanResponse } from './dto.js';
+import type { VehicleInfo } from '../../application/use-cases/get-vehicles.js';
+import type { RealtimeStatus } from '../../application/services/realtime-store.js';
+import type {
+  AlertDto,
+  GeocodeResult as GeocodeResultDto,
+  GtfsInfoDto,
+  ItineraryDto,
+  LegDto,
+  PlaceDto,
+  PlanResponse,
+  RealtimeInfoDto,
+  VehicleDto,
+} from './dto.js';
 
 const iso = (epochMs: number) => new Date(epochMs).toISOString();
 
@@ -38,6 +50,23 @@ export function toLegDto(l: Leg): LegDto {
   if (l.headsign !== undefined) dto.headsign = l.headsign;
   if (l.intermediateStops) dto.intermediateStops = l.intermediateStops.map(toPlaceDto);
   if (l.nextDepartures) dto.nextDepartures = l.nextDepartures.map(iso);
+  if (l.realtime) {
+    dto.realtime = {
+      scheduledStartTime: iso(l.realtime.scheduledStartTime),
+      scheduledEndTime: iso(l.realtime.scheduledEndTime),
+      departureDelaySeconds: l.realtime.departureDelaySeconds,
+      arrivalDelaySeconds: l.realtime.arrivalDelaySeconds,
+    };
+    if (l.realtime.vehicleId !== undefined) dto.realtime.vehicleId = l.realtime.vehicleId;
+  }
+  if (l.alerts && l.alerts.length > 0) dto.alerts = l.alerts.map(toAlertDto);
+  return dto;
+}
+
+export function toAlertDto(a: AlertInfo): AlertDto {
+  const dto: AlertDto = { id: a.id, header: a.header, cause: a.cause, effect: a.effect, severity: a.severity };
+  if (a.description) dto.description = a.description;
+  if (a.url) dto.url = a.url;
   return dto;
 }
 
@@ -61,7 +90,36 @@ export function toPlanResponse(plan: TripPlan): PlanResponse {
     itineraries: plan.itineraries.map(toItineraryDto),
   };
   if (plan.noRouteReason) res.message = NO_ROUTE_MESSAGES[plan.noRouteReason];
+  if (plan.realtimeUpdatedAt !== undefined) res.realtimeUpdatedAt = iso(plan.realtimeUpdatedAt);
   return res;
+}
+
+export function toRealtimeInfoDto(status: RealtimeStatus): RealtimeInfoDto {
+  return {
+    enabled: status.enabled,
+    refreshSeconds: status.refreshSeconds,
+    paused: status.paused,
+    // Sin URLs ni detalle de errores: pueden contener claves de acceso.
+    feeds: status.feeds.map((f) => ({
+      name: f.name,
+      lastUpdatedAt: f.lastUpdatedAt?.toISOString(),
+      feedTimestamp: f.feedTimestamp?.toISOString(),
+      entities: f.entities,
+      stale: f.stale,
+      error: f.lastError !== undefined,
+    })),
+  };
+}
+
+export function toVehicleDto(v: VehicleInfo): VehicleDto {
+  const dto: VehicleDto = { tripId: v.tripId, lat: v.lat, lon: v.lon };
+  if (v.bearing !== undefined) dto.bearing = v.bearing;
+  if (v.speed !== undefined) dto.speed = v.speed;
+  if (v.label !== undefined) dto.label = v.label;
+  if (v.timestamp !== undefined) dto.timestamp = iso(v.timestamp);
+  if (v.status !== undefined) dto.status = v.status;
+  if (v.stopName !== undefined) dto.stopName = v.stopName;
+  return dto;
 }
 
 export function toGtfsInfoDto(info: FeedInfo): GtfsInfoDto {
@@ -79,6 +137,7 @@ export function toGtfsInfoDto(info: FeedInfo): GtfsInfoDto {
     stats: info.stats,
     bounds: info.bounds,
     ignoreServiceCalendar: info.ignoreServiceCalendar,
+    realtime: info.realtime ? toRealtimeInfoDto(info.realtime) : undefined,
   };
 }
 

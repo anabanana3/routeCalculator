@@ -3,14 +3,17 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { GtfsFeedSource } from '../src/application/ports/gtfs-feed-source.js';
+import type { RealtimeFeedSource } from '../src/application/ports/realtime-feed-source.js';
 import { loadConfig } from '../src/infrastructure/config/env-config.js';
 import { NominatimProvider } from '../src/infrastructure/geocoding/nominatim-provider.js';
 import { PhotonProvider } from '../src/infrastructure/geocoding/photon-provider.js';
 import { HttpGtfsFeedSource } from '../src/infrastructure/gtfs/http-feed-source.js';
 import { LocalGtfsFeedSource } from '../src/infrastructure/gtfs/local-feed-source.js';
-import { compose, createFeedSource, createGeocoder, type RunningServer, startServer } from '../src/main.js';
+import { HttpRealtimeFeedSource } from '../src/infrastructure/gtfs-realtime/http-realtime-source.js';
+import { compose, createFeedSource, createGeocoder, createRealtimeSources, type RunningServer, startServer } from '../src/main.js';
 import { fakeGeocoder, fakeLogger, place } from './fixtures/fakes.js';
 import { MemoryTableSource, near, STOPS, TABLES } from './fixtures/network.js';
+import { feed, tripUpdate, vehicle } from './fixtures/realtime.js';
 
 const SAMPLE_GTFS = path.resolve(import.meta.dirname, '../data/gtfs-sample');
 
@@ -41,6 +44,66 @@ describe('createFeedSource / createGeocoder', () => {
   it('elige el geocodificador según la configuración', () => {
     expect(createGeocoder(loadConfig({}).geocoding)).toBeInstanceOf(PhotonProvider);
     expect(createGeocoder(loadConfig({ GEOCODER_PROVIDER: 'nominatim' }).geocoding)).toBeInstanceOf(NominatimProvider);
+  });
+
+  it('crea un origen GTFS-Realtime por URL distinta', () => {
+    expect(createRealtimeSources(loadConfig({}).realtime)).toEqual([]);
+    const sources = createRealtimeSources(
+      loadConfig({
+        GTFS_RT_TRIP_UPDATES_URL: 'https://rt.example/all',
+        GTFS_RT_VEHICLE_POSITIONS_URL: 'https://rt.example/vp',
+        GTFS_RT_ALERTS_URL: 'https://rt.example/all',
+      }).realtime,
+    );
+    expect(sources.map((s) => s.name)).toEqual(['tripUpdates+alerts', 'vehiclePositions']);
+    expect(sources[0]).toBeInstanceOf(HttpRealtimeFeedSource);
+  });
+});
+
+describe('startServer con GTFS-Realtime', () => {
+  it('aplica los retrasos y sirve las posiciones de los vehículos', async () => {
+    const logs = fakeLogger();
+    const rt: RealtimeFeedSource = {
+      name: 'tripUpdates+vehiclePositions',
+      fetch: async () =>
+        feed([tripUpdate('T1', { delay: 120 })], {
+          vehicles: [vehicle('v1', { trip: { tripId: 'T1', scheduleRelationship: 'SCHEDULED' } })],
+        }),
+    };
+    running = await startServer(
+      loadConfig({ PORT: '0', HOST: '127.0.0.1', GTFS_REFRESH_MINUTES: '0', GTFS_RT_MAX_AGE_SECONDS: '0' }),
+      { feedSource: memorySource(), geocoder: fakeGeocoder(), realtimeSources: [rt], loggerFactory: () => logs },
+    );
+    expect(logs.info).toHaveBeenCalledWith(expect.stringContaining('GTFS-Realtime activo (tripUpdates+vehiclePositions)'));
+    await waitLoaded(running);
+    await running.realtime.refresh();
+    const base = `http://127.0.0.1:${running.port}`;
+
+    const res = await fetch(`${base}/api/plan`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ from: near(STOPS.A), to: near(STOPS.E), dateTime: '2026-03-02T07:55:00+01:00' }),
+    });
+    const plan = await res.json();
+    expect(plan.realtimeUpdatedAt).toBeDefined();
+    const bus = plan.itineraries.flatMap((it: { legs: { tripId?: string }[] }) => it.legs).find((l: { tripId?: string }) => l.tripId === 'T1');
+    expect(bus.realtime).toMatchObject({ departureDelaySeconds: 120 });
+
+    const vehicles = await (await fetch(`${base}/api/realtime/vehicles?tripIds=T1`)).json();
+    expect(vehicles).toEqual({ vehicles: [{ tripId: 'T1', lat: 40.4, lon: -3.697 }] });
+
+    const info = await (await fetch(`${base}/api/gtfs`)).json();
+    expect(info.realtime).toMatchObject({ enabled: true, feeds: [{ name: 'tripUpdates+vehiclePositions', stale: false }] });
+  });
+
+  it('avisa si no está configurado', async () => {
+    const logs = fakeLogger();
+    running = await startServer(loadConfig({ PORT: '0', HOST: '127.0.0.1', GTFS_REFRESH_MINUTES: '0' }), {
+      feedSource: memorySource(),
+      geocoder: fakeGeocoder(),
+      loggerFactory: () => logs,
+    });
+    expect(logs.info).toHaveBeenCalledWith(expect.stringContaining('GTFS-Realtime no configurado'));
   });
 });
 

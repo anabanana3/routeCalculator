@@ -7,8 +7,11 @@ import {
   toGeocodeResultDto,
   toGtfsInfoDto,
   toItineraryDto,
+  toLegDto,
   toPlaceDto,
   toPlanResponse,
+  toRealtimeInfoDto,
+  toVehicleDto,
 } from '../../../src/interfaces/http/presenters.js';
 
 const T0 = Date.parse('2026-03-02T07:00:00Z');
@@ -160,5 +163,94 @@ describe('toGeocodeResultDto', () => {
   it('copia los campos y omite secondary ausente', () => {
     expect(toGeocodeResultDto({ label: 'A', lat: 1, lon: 2, kind: 'stop' })).toEqual({ label: 'A', lat: 1, lon: 2, kind: 'stop' });
     expect(toGeocodeResultDto({ label: 'A', secondary: 'B', lat: 1, lon: 2, kind: 'poi' }).secondary).toBe('B');
+  });
+});
+
+describe('tiempo real', () => {
+  const alert = { id: 'a', header: 'Obras', description: '', url: '', cause: 'CONSTRUCTION', effect: 'DETOUR', severity: 'WARNING' };
+
+  it('toLegDto incluye las horas programadas, el retraso y los avisos', () => {
+    const leg = {
+      ...itinerary.legs[1],
+      realtime: {
+        scheduledStartTime: T0,
+        scheduledEndTime: T0 + 540_000,
+        departureDelaySeconds: 60,
+        arrivalDelaySeconds: -30,
+        vehicleId: 'BUS-1',
+      },
+      alerts: [alert, { ...alert, id: 'b', description: 'Detalle', url: 'https://x.test' }],
+    };
+    const dto = toLegDto(leg);
+    expect(dto.realtime).toEqual({
+      scheduledStartTime: iso(T0),
+      scheduledEndTime: iso(T0 + 540_000),
+      departureDelaySeconds: 60,
+      arrivalDelaySeconds: -30,
+      vehicleId: 'BUS-1',
+    });
+    expect(dto.alerts).toEqual([
+      { id: 'a', header: 'Obras', cause: 'CONSTRUCTION', effect: 'DETOUR', severity: 'WARNING' },
+      { id: 'b', header: 'Obras', description: 'Detalle', url: 'https://x.test', cause: 'CONSTRUCTION', effect: 'DETOUR', severity: 'WARNING' },
+    ]);
+    const { vehicleId: _v, ...noVehicle } = leg.realtime;
+    expect(toLegDto({ ...leg, realtime: noVehicle, alerts: [] })).not.toHaveProperty('alerts');
+    expect(toLegDto({ ...leg, realtime: noVehicle }).realtime).not.toHaveProperty('vehicleId');
+    expect(toLegDto(itinerary.legs[1])).not.toHaveProperty('realtime');
+  });
+
+  it('toPlanResponse indica la hora de los datos en tiempo real', () => {
+    const plan: TripPlan = { requestedAt: T0, timezone: 'UTC', itineraries: [], realtimeUpdatedAt: T0 - 5000 };
+    expect(toPlanResponse(plan).realtimeUpdatedAt).toBe(iso(T0 - 5000));
+  });
+
+  it('toRealtimeInfoDto no expone el detalle de los errores', () => {
+    const dto = toRealtimeInfoDto({
+      enabled: true,
+      refreshSeconds: 30,
+      paused: false,
+      feeds: [
+        { name: 'tu', entities: 3, stale: false, failures: 0, lastUpdatedAt: new Date(T0), feedTimestamp: new Date(T0 - 1000) },
+        { name: 'al', entities: 0, stale: true, failures: 2, lastError: 'HTTP 403 https://x?key=secreto' },
+      ],
+    });
+    expect(dto).toEqual({
+      enabled: true,
+      refreshSeconds: 30,
+      paused: false,
+      feeds: [
+        { name: 'tu', lastUpdatedAt: iso(T0), feedTimestamp: iso(T0 - 1000), entities: 3, stale: false, error: false },
+        { name: 'al', lastUpdatedAt: undefined, feedTimestamp: undefined, entities: 0, stale: true, error: true },
+      ],
+    });
+    expect(JSON.stringify(dto)).not.toContain('secreto');
+  });
+
+  it('toGtfsInfoDto incluye el estado del tiempo real si existe', () => {
+    const info: FeedInfo = {
+      status: { loaded: true, loading: false, source: 'local', refreshMinutes: 0 },
+      agencies: [],
+      ignoreServiceCalendar: false,
+      realtime: { enabled: false, refreshSeconds: 30, paused: false, feeds: [] },
+    };
+    expect(toGtfsInfoDto(info).realtime).toEqual({ enabled: false, refreshSeconds: 30, paused: false, feeds: [] });
+  });
+
+  it('toVehicleDto omite los campos ausentes', () => {
+    expect(toVehicleDto({ tripId: 'T', lat: 1, lon: 2 })).toEqual({ tripId: 'T', lat: 1, lon: 2 });
+    expect(
+      toVehicleDto({
+        tripId: 'T',
+        vehicleId: 'V',
+        lat: 1,
+        lon: 2,
+        bearing: 0,
+        speed: 3,
+        label: 'Bus',
+        timestamp: T0,
+        status: 'STOPPED_AT',
+        stopName: 'Sol',
+      }),
+    ).toEqual({ tripId: 'T', lat: 1, lon: 2, bearing: 0, speed: 3, label: 'Bus', timestamp: iso(T0), status: 'STOPPED_AT', stopName: 'Sol' });
   });
 });

@@ -166,6 +166,7 @@ export async function buildTransitNetwork(dir: GtfsTableSource, opts: BuildOptio
     if (n < 2) continue;
     const order = Array.from({ length: n }, (_, i) => i).sort((a, b) => t.seq[a] - t.seq[b]);
     const stopsArr = new Int32Array(n);
+    const seqArr = new Int32Array(n);
     const arr = new Int32Array(n);
     const dep = new Int32Array(n);
     const dist = new Float64Array(n);
@@ -173,6 +174,7 @@ export async function buildTransitNetwork(dir: GtfsTableSource, opts: BuildOptio
     for (let k = 0; k < n; k++) {
       const i = order[k];
       stopsArr[k] = t.stop[i];
+      seqArr[k] = t.seq[i];
       let a = t.arr[i];
       let d = t.dep[i];
       if (a < 0) a = d;
@@ -185,7 +187,7 @@ export async function buildTransitNetwork(dir: GtfsTableSource, opts: BuildOptio
     interpolateMissingTimes(arr, dep);
     if (arr[0] < 0 || dep[n - 1] < 0) continue;
     trips[tripIdx].timesIdx = tripTimes.length;
-    tripTimes.push({ stops: stopsArr, arr, dep, dist: hasDist ? dist : null });
+    tripTimes.push({ stops: stopsArr, seq: seqArr, arr, dep, dist: hasDist ? dist : null });
   }
   tmp.clear();
 

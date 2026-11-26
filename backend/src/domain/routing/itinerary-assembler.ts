@@ -1,18 +1,31 @@
 import { type LatLon, polylineLength } from '../geo/geo.js';
 import type { Stop, TransitNetwork } from '../network/model.js';
+import type { AlertTarget } from '../realtime/alerts.js';
+import type { RtAlert } from '../realtime/model.js';
+import { gtfsTripId, type RealtimeIndex } from '../realtime/realtime-index.js';
 import { SECONDS_PER_DAY } from '../time/service-time.js';
-import type { RawJourney } from './csa.js';
+import type { RawJourney, RawLeg } from './csa.js';
 import { tripLegGeometry } from './geometry.js';
-import type { Itinerary, Leg, Place, RouteInfo } from './itinerary.js';
+import type { AlertInfo, Itinerary, Leg, Place, RouteInfo } from './itinerary.js';
 import { routeTypeToMode } from './route-mode.js';
 
 export const NEXT_DEPARTURES = 3;
+/** Con datos en tiempo real, cuánto antes de la hora buscada se miran salidas programadas que puedan ir con retraso. */
+export const REALTIME_LOOKBACK_SECONDS = 3600;
+
+/** Datos en tiempo real de una consulta. */
+export interface QueryRealtime {
+  index: RealtimeIndex;
+  /** Fechas de servicio (YYYYMMDD) del día anterior, el consultado y el siguiente. */
+  dates: [string, string, string];
+}
 
 /** Contexto temporal de una consulta: base del día de servicio y servicios activos (día -1, 0, +1). */
 export interface QueryContext {
   /** epoch ms de la base del día de servicio consultado. */
   base: number;
   actives: [Uint8Array, Uint8Array, Uint8Array];
+  realtime?: QueryRealtime;
 }
 
 interface Draft {
@@ -21,13 +34,14 @@ interface Draft {
   end: number;
 }
 
+type TransitRaw = Extract<RawLeg, { kind: 'transit' }>;
+
 /** Convierte los viajes "en bruto" del algoritmo en itinerarios con tramos, horas y geometría. */
 export class ItineraryAssembler {
   constructor(private readonly network: TransitNetwork) {}
 
   fromJourney(j: RawJourney, from: LatLon, to: LatLon, ctx: QueryContext): Itinerary {
     const d = this.network;
-    const C = d.connections;
     const at = (seconds: number) => ctx.base + seconds * 1000;
     const originPlace: Place = { name: 'Origen', lat: from.lat, lon: from.lon };
     const destPlace: Place = { name: 'Destino', lat: to.lat, lon: to.lon };
@@ -38,38 +52,9 @@ export class ItineraryAssembler {
 
     for (const raw of j.legs) {
       if (raw.kind === 'transit') {
-        const trip = d.trips[C.trip[raw.board]];
-        const times = d.tripTimes[trip.timesIdx];
-        const fromPos = C.pos[raw.board];
-        const toPos = C.pos[raw.alight] + 1;
-        const shift = trip.offset + raw.shift;
-        const start = times.dep[fromPos] + shift;
-        const end = times.arr[toPos] + shift;
-        const geometry = tripLegGeometry(d, trip, fromPos, toPos);
-        const intermediateStops: Place[] = [];
-        for (let k = fromPos + 1; k < toPos; k++) {
-          intermediateStops.push(stopPlace(d.stops[times.stops[k]], at(times.arr[k] + shift)));
-        }
-        drafts.push({
-          start,
-          end,
-          leg: {
-            mode: routeTypeToMode(d.routes[trip.routeIdx].type),
-            from: stopPlace(d.stops[times.stops[fromPos]], at(start)),
-            to: stopPlace(d.stops[times.stops[toPos]], at(end)),
-            startTime: 0,
-            endTime: 0,
-            durationSeconds: end - start,
-            distanceMeters: Math.round(polylineLength(geometry)),
-            geometry,
-            route: this.routeInfo(trip.routeIdx),
-            tripId: trip.id,
-            headsign: trip.headsign || undefined,
-            intermediateStops,
-            nextDepartures: this.nextDepartures(raw.board, start, ctx).map(at),
-          },
-        });
-        cursor = end;
+        const draft = raw.realtime ? this.realtimeTransit(raw, ctx) : this.scheduledTransit(raw, ctx);
+        drafts.push(draft);
+        cursor = draft.end;
         continue;
       }
 
@@ -106,6 +91,113 @@ export class ItineraryAssembler {
     return summarize(legs, at(merged[0].start), at(merged[merged.length - 1].end));
   }
 
+  /** Tramo con las horas del horario programado. */
+  private scheduledTransit(raw: TransitRaw, ctx: QueryContext): Draft {
+    const d = this.network;
+    const C = d.connections;
+    const at = (seconds: number) => ctx.base + seconds * 1000;
+    const tripIdx = C.trip[raw.board];
+    const trip = d.trips[tripIdx];
+    const times = d.tripTimes[trip.timesIdx];
+    const fromPos = C.pos[raw.board];
+    const toPos = C.pos[raw.alight] + 1;
+    const shift = trip.offset + raw.shift;
+    const start = times.dep[fromPos] + shift;
+    const end = times.arr[toPos] + shift;
+    const intermediateStops: Place[] = [];
+    for (let k = fromPos + 1; k < toPos; k++) {
+      intermediateStops.push(stopPlace(d.stops[times.stops[k]], at(times.arr[k] + shift)));
+    }
+    const leg = this.transitLeg(tripIdx, fromPos, toPos, at(start), at(end), intermediateStops);
+    leg.nextDepartures = this.departuresFrom(C.depStop[raw.board], C.arrStop[raw.board], trip.routeIdx, start, ctx).map(at);
+    this.attachAlerts(leg, tripIdx, ctx);
+    return { start, end, leg };
+  }
+
+  /** Tramo con las horas previstas por GTFS-Realtime. */
+  private realtimeTransit(raw: TransitRaw, ctx: QueryContext): Draft {
+    const d = this.network;
+    const rt = ctx.realtime!.index;
+    const R = rt.connections;
+    const baseSec = ctx.base / 1000;
+    const inst = rt.instances[R.instance[raw.board]];
+    const trip = d.trips[inst.tripIdx];
+    const times = d.tripTimes[trip.timesIdx];
+    const fromPos = R.fromPos[raw.board];
+    const toPos = R.toPos[raw.alight];
+    const start = inst.dep[fromPos] - baseSec;
+    const end = inst.arr[toPos] - baseSec;
+    const intermediateStops: Place[] = [];
+    for (let k = fromPos + 1; k < toPos; k++) {
+      if (!inst.skipped[k]) intermediateStops.push(stopPlace(d.stops[times.stops[k]], inst.arr[k] * 1000));
+    }
+    const leg = this.transitLeg(inst.tripIdx, fromPos, toPos, inst.dep[fromPos] * 1000, inst.arr[toPos] * 1000, intermediateStops);
+    if (inst.predicted[fromPos] || inst.predicted[toPos]) {
+      const scheduledStart = inst.baseSec + times.dep[fromPos];
+      const scheduledEnd = inst.baseSec + times.arr[toPos];
+      leg.realtime = {
+        scheduledStartTime: scheduledStart * 1000,
+        scheduledEndTime: scheduledEnd * 1000,
+        departureDelaySeconds: Math.round(inst.dep[fromPos] - scheduledStart),
+        arrivalDelaySeconds: Math.round(inst.arr[toPos] - scheduledEnd),
+      };
+      if (inst.vehicleId) leg.realtime.vehicleId = inst.vehicleId;
+    }
+    leg.nextDepartures = this.departuresFrom(times.stops[fromPos], times.stops[fromPos + 1], trip.routeIdx, start, ctx).map(
+      (s) => ctx.base + s * 1000,
+    );
+    this.attachAlerts(leg, inst.tripIdx, ctx);
+    return { start, end, leg };
+  }
+
+  private transitLeg(tripIdx: number, fromPos: number, toPos: number, startMs: number, endMs: number, intermediateStops: Place[]): Leg {
+    const d = this.network;
+    const trip = d.trips[tripIdx];
+    const times = d.tripTimes[trip.timesIdx];
+    const geometry = tripLegGeometry(d, trip, fromPos, toPos);
+    return {
+      mode: routeTypeToMode(d.routes[trip.routeIdx].type),
+      from: stopPlace(d.stops[times.stops[fromPos]], startMs),
+      to: stopPlace(d.stops[times.stops[toPos]], endMs),
+      startTime: 0,
+      endTime: 0,
+      durationSeconds: Math.round((endMs - startMs) / 1000),
+      distanceMeters: Math.round(polylineLength(geometry)),
+      geometry,
+      route: this.routeInfo(trip.routeIdx),
+      tripId: trip.id,
+      headsign: trip.headsign || undefined,
+      intermediateStops,
+    };
+  }
+
+  /** Avisos vigentes durante el tramo que afectan a su línea, viaje o paradas de subida y bajada. */
+  private attachAlerts(leg: Leg, tripIdx: number, ctx: QueryContext): void {
+    const rt = ctx.realtime?.index;
+    if (!rt || rt.alerts.length === 0) return;
+    const d = this.network;
+    const trip = d.trips[tripIdx];
+    const route = d.routes[trip.routeIdx];
+    const stopIds = new Set<string>();
+    for (const p of [leg.from, leg.to]) {
+      if (!p.stopId) continue;
+      stopIds.add(p.stopId);
+      const idx = d.stopIndex.get(p.stopId);
+      const parent = idx === undefined ? '' : d.stops[idx].parentStation;
+      if (parent) stopIds.add(parent);
+    }
+    const target: AlertTarget = {
+      agencyId: route.agencyId || d.agencies[0]?.id || '',
+      routeId: route.id,
+      routeType: route.type,
+      directionId: trip.directionId,
+      tripId: gtfsTripId(d, tripIdx),
+      stopIds,
+    };
+    const alerts = rt.alertsFor(target, leg.from.time! / 1000, leg.to.time! / 1000);
+    if (alerts.length > 0) leg.alerts = alerts.map(toAlertInfo);
+  }
+
   /** Itinerario solo a pie en línea recta (ya corregida con el factor de distancia). */
   walkOnly(from: LatLon, to: LatLon, startEpoch: number, meters: number, walkSpeedMps: number): Itinerary {
     const seconds = Math.round(meters / walkSpeedMps);
@@ -128,12 +220,22 @@ export class ItineraryAssembler {
 
   /** Próximas salidas (segundos desde la base) de la misma línea y sentido desde la parada de la conexión. */
   nextDepartures(connIdx: number, fromTime: number, ctx: QueryContext): number[] {
+    const C = this.network.connections;
+    return this.departuresFrom(C.depStop[connIdx], C.arrStop[connIdx], this.network.trips[C.trip[connIdx]].routeIdx, fromTime, ctx);
+  }
+
+  /**
+   * Próximas salidas (segundos desde la base) desde `stop` hacia `nextStop` de la línea indicada.
+   * Con datos en tiempo real se usan las horas previstas y se omiten los viajes cancelados
+   * o que no paran; por eso se miran también salidas programadas algo anteriores.
+   */
+  departuresFrom(stop: number, nextStop: number, routeIdx: number, fromTime: number, ctx: QueryContext): number[] {
     const d = this.network;
     const C = d.connections;
-    const stop = C.depStop[connIdx];
-    const nextStop = C.arrStop[connIdx];
-    const routeIdx = d.trips[C.trip[connIdx]].routeIdx;
     const list = d.stopDepartures[stop];
+    const rt = ctx.realtime;
+    const baseSec = ctx.base / 1000;
+    const searchFrom = rt ? fromTime - REALTIME_LOOKBACK_SECONDS : fromTime;
     const result: number[] = [];
 
     for (let k = 0; k < 3; k++) {
@@ -143,16 +245,24 @@ export class ItineraryAssembler {
       let hi = list.length;
       while (lo < hi) {
         const mid = (lo + hi) >>> 1;
-        if (C.depTime[list[mid]] + shift < fromTime) lo = mid + 1;
+        if (C.depTime[list[mid]] + shift < searchFrom) lo = mid + 1;
         else hi = mid;
       }
       let found = 0;
       for (let i = lo; i < list.length && found < NEXT_DEPARTURES; i++) {
         const c = list[i];
-        const trip = d.trips[C.trip[c]];
+        const tripIdx = C.trip[c];
+        const trip = d.trips[tripIdx];
         if (trip.routeIdx !== routeIdx || C.arrStop[c] !== nextStop) continue;
         if (active[trip.serviceIdx] === 0) continue;
-        result.push(C.depTime[c] + shift);
+        let t = C.depTime[c] + shift;
+        const inst = rt?.index.instance(tripIdx, rt.dates[k]);
+        if (inst) {
+          if (inst.canceled || inst.skipped[C.pos[c]]) continue;
+          t = Math.round(inst.dep[C.pos[c]] - baseSec);
+        }
+        if (t < fromTime) continue;
+        result.push(t);
         found++;
       }
     }
@@ -176,6 +286,18 @@ export class ItineraryAssembler {
 
 export function stopPlace(stop: Stop, time?: number): Place {
   return { name: stop.name, lat: stop.lat, lon: stop.lon, stopId: stop.id, stopCode: stop.code || undefined, time };
+}
+
+export function toAlertInfo(a: RtAlert): AlertInfo {
+  return {
+    id: a.id,
+    header: a.header,
+    description: a.description,
+    url: a.url,
+    cause: a.cause,
+    effect: a.effect,
+    severity: a.severity,
+  };
 }
 
 /**

@@ -1,12 +1,15 @@
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import DirectionsWalkIcon from '@mui/icons-material/DirectionsWalk';
+import WarningAmberIcon from '@mui/icons-material/WarningAmber';
 import { Box, List, ListItemButton, Typography } from '@mui/material';
 import { Fragment } from 'react';
 import { useNow } from '../../application/hooks/useNow';
 import { formatDistance, formatDuration, formatRelative, formatTime, formatTransfers } from '../../domain/format';
 import { compactMinutes, firstTransitLeg, isWalk } from '../../domain/itinerary';
+import { formatAlertCount, itineraryAlerts } from '../../domain/realtime';
 import type { ItineraryDto } from '../../domain/types/api';
 import { useTimeZone } from '../time-zone';
+import { RealtimeStatus } from './RealtimeTime';
 import { RouteBadge } from './RouteBadge';
 
 interface Props {
@@ -47,6 +50,7 @@ export function ItineraryList({ itineraries, highlighted, onHighlight, onSelect 
     <List disablePadding>
       {itineraries.map((it, i) => {
         const firstTransit = firstTransitLeg(it);
+        const alerts = itineraryAlerts(it);
         return (
           <ListItemButton
             key={i}
@@ -72,6 +76,19 @@ export function ItineraryList({ itineraries, highlighted, onHighlight, onSelect 
               {formatDistance(it.walkingDistanceMeters)} a pie
               {it.transfers > 0 && ` · ${formatTransfers(it.transfers)}`}
             </Typography>
+            {(firstTransit?.realtime || alerts.length > 0) && (
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, flexWrap: 'wrap' }}>
+                {firstTransit?.realtime && <RealtimeStatus delaySeconds={firstTransit.realtime.departureDelaySeconds} />}
+                {alerts.length > 0 && (
+                  <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.5, color: 'warning.dark' }}>
+                    <WarningAmberIcon sx={{ fontSize: 16 }} />
+                    <Typography component="span" variant="caption" fontWeight={500}>
+                      {formatAlertCount(alerts.length)}
+                    </Typography>
+                  </Box>
+                )}
+              </Box>
+            )}
           </ListItemButton>
         );
       })}

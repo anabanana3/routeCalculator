@@ -2,10 +2,11 @@ import L, { type PointExpression } from 'leaflet';
 import { useEffect } from 'react';
 import { MapContainer, Marker, TileLayer, useMap, useMapEvents } from 'react-leaflet';
 import type { MapFocus } from '../../../domain/geo';
-import type { ItineraryDto, LatLon } from '../../../domain/types/api';
+import type { ItineraryDto, LatLon, VehicleDto } from '../../../domain/types/api';
 import type { AppConfig } from '../../../infrastructure/config';
 import { ItineraryLayer } from './ItineraryLayer';
 import { destinationIcon, originIcon } from './markers';
+import { VehicleLayer } from './VehicleLayer';
 
 export type { MapFocus } from '../../../domain/geo';
 
@@ -14,6 +15,8 @@ interface Props {
   origin: LatLon | null;
   destination: LatLon | null;
   itinerary: ItineraryDto | null;
+  /** Vehículos en tiempo real del itinerario. */
+  vehicles?: VehicleDto[];
   focus: MapFocus | null;
   /** Margen para que el panel lateral/inferior no tape la ruta al encuadrar. */
   paddingTopLeft: PointExpression;
@@ -69,13 +72,14 @@ export function DraggableMarker({
 }
 
 export function MapView(props: Props) {
-  const { origin, destination, itinerary, config } = props;
+  const { origin, destination, itinerary, vehicles, config } = props;
   return (
     <MapContainer center={config.defaultCenter} zoom={config.defaultZoom} zoomControl={false} style={{ height: '100%', width: '100%' }}>
       <TileLayer url={config.tileUrl} attribution={config.attribution} maxZoom={19} />
       <ClickHandler onClick={props.onMapClick} />
       <FitBounds focus={props.focus} paddingTopLeft={props.paddingTopLeft} paddingBottomRight={props.paddingBottomRight} />
       {itinerary && <ItineraryLayer itinerary={itinerary} />}
+      {itinerary && vehicles && vehicles.length > 0 && <VehicleLayer itinerary={itinerary} vehicles={vehicles} />}
       {origin && <DraggableMarker position={origin} icon={originIcon} onChange={props.onOriginChange} />}
       {destination && <DraggableMarker position={destination} icon={destinationIcon} onChange={props.onDestinationChange} />}
     </MapContainer>

@@ -18,12 +18,25 @@ vi.mock('react-leaflet', () => ({
   TileLayer: ({ url, attribution }: { url: string; attribution: string }) => (
     <div data-testid="tiles" data-url={url} data-attribution={attribution} />
   ),
-  Marker: ({ position, eventHandlers }: { position: unknown; eventHandlers: { dragend: (e: unknown) => void } }) => (
+  Marker: ({
+    position,
+    eventHandlers,
+    icon,
+    children,
+  }: {
+    position: unknown;
+    eventHandlers?: { dragend: (e: unknown) => void };
+    icon?: { options: { html?: string } };
+    children?: ReactNode;
+  }) => (
     <button
       data-testid="marker"
       data-position={JSON.stringify(position)}
-      onClick={() => eventHandlers.dragend({ target: { getLatLng: () => ({ lat: 1.5, lng: 2.5 }) } })}
-    />
+      data-icon={icon?.options.html ?? ''}
+      onClick={() => eventHandlers?.dragend({ target: { getLatLng: () => ({ lat: 1.5, lng: 2.5 }) } })}
+    >
+      {children}
+    </button>
   ),
   Polyline: ({ positions, pathOptions }: { positions: unknown; pathOptions: { color: string; dashArray?: string } }) => (
     <div data-testid="polyline" data-color={pathOptions.color} data-dash={pathOptions.dashArray ?? ''} data-points={JSON.stringify(positions)} />
@@ -43,7 +56,8 @@ vi.mock('react-leaflet', () => ({
 
 const { ItineraryLayer } = await import('../../src/ui/components/map/ItineraryLayer');
 const { MapView } = await import('../../src/ui/components/map/MapView');
-const { destinationIcon, originIcon, pinHtml } = await import('../../src/ui/components/map/markers');
+const { VehicleLayer } = await import('../../src/ui/components/map/VehicleLayer');
+const { destinationIcon, originIcon, pinHtml, vehicleHtml, vehicleIcon } = await import('../../src/ui/components/map/markers');
 
 const CONFIG = { tileUrl: 'https://t/{z}/{x}/{y}.png', attribution: '© test', defaultCenter: [1, 2] as [number, number], defaultZoom: 14 };
 
@@ -133,6 +147,47 @@ describe('MapView', () => {
     setup({ itinerary: TRANSIT_ITINERARY });
     expect(screen.getAllByTestId('polyline').length).toBeGreaterThan(0);
   });
+
+  it('dibuja los vehículos del itinerario', () => {
+    setup({ itinerary: TRANSIT_ITINERARY, vehicles: [{ tripId: 'T1', lat: 40.41, lon: -3.7 }] });
+    expect(screen.getAllByTestId('marker')).toHaveLength(1);
+    setup({ itinerary: null, vehicles: [{ tripId: 'T1', lat: 40.41, lon: -3.7 }] });
+    setup({ itinerary: TRANSIT_ITINERARY, vehicles: [] });
+    expect(screen.getAllByTestId('marker')).toHaveLength(1);
+  });
+});
+
+describe('VehicleLayer', () => {
+  it('pinta cada vehículo con el color de su línea y lo describe', () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(Date.parse('2026-03-02T07:00:40Z'));
+    try {
+      render(
+        <VehicleLayer
+          itinerary={TRANSIT_ITINERARY}
+          vehicles={[
+            { tripId: 'T1', lat: 40.41, lon: -3.7, bearing: 90, label: '1234', stopName: 'Tirso', status: 'STOPPED_AT', timestamp: '2026-03-02T07:00:00Z' },
+            { tripId: 'DESCONOCIDO', lat: 0, lon: 0 },
+          ]}
+        />,
+      );
+      const markers = screen.getAllByTestId('marker');
+      expect(markers).toHaveLength(1);
+      expect(markers[0].dataset.position).toBe('[40.41,-3.7]');
+      expect(markers[0].dataset.icon).toContain('#D32F2F');
+      expect(markers[0].dataset.icon).toContain('rotate(90deg)');
+      expect(markers[0]).toHaveTextContent('L1 · 1234 · en Tirso · hace 40 s');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('sin línea ni datos extra', () => {
+    const it = itinerary([busLeg(0, 10, { route: undefined })]);
+    render(<VehicleLayer itinerary={it} vehicles={[{ tripId: 'T1', lat: 1, lon: 2 }]} />);
+    expect(screen.getByTestId('marker')).toHaveTextContent(/^Vehículo$/);
+    expect(screen.getByTestId('marker').dataset.icon).not.toContain('rotate');
+  });
 });
 
 describe('markers', () => {
@@ -145,5 +200,14 @@ describe('markers', () => {
   it('pinHtml solo admite colores hexadecimales (evita inyectar HTML)', () => {
     expect(pinHtml('#123456')).toContain('fill="#123456"');
     expect(() => pinHtml('red" onload="alert(1)')).toThrow(/Color no válido/);
+  });
+
+  it('iconos de vehículo: color validado, flecha según el rumbo y reutilizados', () => {
+    expect(() => vehicleHtml('red;background:url(x)')).toThrow(/Color no válido/);
+    expect(vehicleHtml('#123456', Number.NaN)).not.toContain('rotate');
+    expect(vehicleHtml('#123456', 450.4)).toContain('rotate(90deg)');
+    expect(vehicleIcon('#123456', 10)).toBe(vehicleIcon('#123456', 10.2));
+    expect(vehicleIcon('#123456')).not.toBe(vehicleIcon('#123456', 10));
+    expect(vehicleIcon('#123456').options.iconAnchor).toEqual([11, 11]);
   });
 });

@@ -2,6 +2,7 @@ import cors, { type CorsOptions } from 'cors';
 import express from 'express';
 import { type Logger, silentLogger } from '../../application/ports/logger.js';
 import type { GetFeedInfoUseCase } from '../../application/use-cases/get-feed-info.js';
+import type { GetVehiclesUseCase } from '../../application/use-cases/get-vehicles.js';
 import type { PlanTripUseCase } from '../../application/use-cases/plan-trip.js';
 import type { ReloadFeedUseCase } from '../../application/use-cases/reload-feed.js';
 import type { ReverseGeocodeUseCase } from '../../application/use-cases/reverse-geocode.js';
@@ -14,6 +15,7 @@ import { securityHeaders } from './middleware/security-headers.js';
 import { geocodeRoutes } from './routes/geocode.routes.js';
 import { gtfsRoutes } from './routes/gtfs.routes.js';
 import { planRoutes } from './routes/plan.routes.js';
+import { realtimeRoutes } from './routes/realtime.routes.js';
 
 export interface HttpDependencies {
   planTrip: Pick<PlanTripUseCase, 'execute'>;
@@ -21,6 +23,7 @@ export interface HttpDependencies {
   reloadFeed: Pick<ReloadFeedUseCase, 'execute'>;
   searchPlaces: Pick<SearchPlacesUseCase, 'execute'>;
   reverseGeocode: Pick<ReverseGeocodeUseCase, 'execute'>;
+  getVehicles: Pick<GetVehiclesUseCase, 'execute'>;
   security: AppConfig['security'];
   logger?: Logger;
 }
@@ -59,6 +62,7 @@ export function createApp(deps: HttpDependencies) {
   app.use('/api', gtfsRoutes(deps.getFeedInfo, deps.reloadFeed, deps.security.adminToken));
   app.use('/api', planRoutes(deps.planTrip));
   app.use('/api', geocodeRoutes(deps.searchPlaces, deps.reverseGeocode));
+  app.use('/api', realtimeRoutes(deps.getVehicles));
 
   app.use(notFound);
   app.use(errorHandler(logger));

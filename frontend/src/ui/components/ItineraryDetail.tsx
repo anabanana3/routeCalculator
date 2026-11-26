@@ -14,25 +14,36 @@ import {
   rideStopsLabel,
   showLegStart,
 } from '../../domain/itinerary';
-import type { ItineraryDto, LegDto } from '../../domain/types/api';
+import { formatAge, vehicleWhere } from '../../domain/realtime';
+import type { ItineraryDto, LegDto, VehicleDto } from '../../domain/types/api';
 import { useTimeZone } from '../time-zone';
+import { AlertList } from './AlertList';
+import { RealtimeStatus, RealtimeTime } from './RealtimeTime';
 import { ModeIcon, RouteBadge } from './RouteBadge';
 
 interface Props {
   itinerary: ItineraryDto;
   originLabel?: string;
   destinationLabel?: string;
+  /** Posición en tiempo real de los vehículos del itinerario. */
+  vehicles?: VehicleDto[];
   onBack: () => void;
   onFocusLeg: (index: number) => void;
 }
 
+interface RowRealtime {
+  scheduled: string;
+  delaySeconds: number;
+}
+
 /** Fila de la línea de tiempo: [hora] [punto/línea] [contenido]. */
-function Row({ time, marker, children }: { time?: string; marker: ReactNode; children: ReactNode }) {
+function Row({ time, realtime, marker, children }: { time?: string; realtime?: RowRealtime; marker: ReactNode; children: ReactNode }) {
   const tz = useTimeZone();
   return (
     <Box sx={{ display: 'flex', alignItems: 'stretch', minHeight: 32 }}>
       <Box sx={{ width: 48, flexShrink: 0, pt: 0.25 }}>
-        {time && (
+        {time && realtime && <RealtimeTime time={time} scheduled={realtime.scheduled} delaySeconds={realtime.delaySeconds} />}
+        {time && !realtime && (
           <Typography variant="body2" fontWeight={500}>
             {formatTime(time, tz)}
           </Typography>
@@ -63,11 +74,12 @@ function Line({ color, dashed }: { color: string; dashed?: boolean }) {
   );
 }
 
-function TransitContent({ leg, now }: { leg: LegDto; now: number }) {
+function TransitContent({ leg, now, vehicle }: { leg: LegDto; now: number; vehicle?: VehicleDto }) {
   const tz = useTimeZone();
   const [open, setOpen] = useState(false);
   const stops = leg.intermediateStops ?? [];
   const others = otherDepartures(leg);
+  const where = vehicle ? vehicleWhere(vehicle) : '';
   return (
     <Stack spacing={0.5} sx={{ py: 1 }}>
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
@@ -81,11 +93,20 @@ function TransitContent({ leg, now }: { leg: LegDto; now: number }) {
       <Typography variant="body2" color="primary" fontWeight={500}>
         Sale {formatRelative(leg.startTime, now, tz)}
       </Typography>
+      {leg.realtime && <RealtimeStatus delaySeconds={leg.realtime.departureDelaySeconds} />}
+      {vehicle && (
+        <Typography variant="caption" color="text.secondary">
+          Vehículo{vehicle.label ? ` ${vehicle.label}` : ''}
+          {where ? `: ${where}` : ' localizado en el mapa'}
+          {vehicle.timestamp ? ` (${formatAge(vehicle.timestamp, now)})` : ''}
+        </Typography>
+      )}
       {others.length > 0 && (
         <Typography variant="caption" color="text.secondary">
           Siguientes: {others.map((t) => formatTime(t, tz)).join(' · ')}
         </Typography>
       )}
+      {leg.alerts && <AlertList alerts={leg.alerts} />}
       <Button
         size="small"
         color="inherit"
@@ -109,10 +130,11 @@ function TransitContent({ leg, now }: { leg: LegDto; now: number }) {
   );
 }
 
-export function ItineraryDetail({ itinerary, originLabel, destinationLabel, onBack, onFocusLeg }: Props) {
+export function ItineraryDetail({ itinerary, originLabel, destinationLabel, vehicles = [], onBack, onFocusLeg }: Props) {
   const now = useNow();
   const tz = useTimeZone();
   const { legs } = itinerary;
+  const vehicleOf = (leg: LegDto) => (leg.tripId ? vehicles.find((v) => v.tripId === leg.tripId) : undefined);
 
   return (
     <Stack spacing={1.5}>
@@ -137,7 +159,13 @@ export function ItineraryDetail({ itinerary, originLabel, destinationLabel, onBa
           return (
             <Box key={i} data-testid={`leg-${i}`} onClick={() => onFocusLeg(i)} sx={{ cursor: 'pointer' }}>
               {showLegStart(legs, i) && (
-                <Row time={leg.startTime} marker={<Dot color={i === 0 ? ORIGIN_COLOR : color} />}>
+                <Row
+                  time={leg.startTime}
+                  realtime={
+                    leg.realtime && { scheduled: leg.realtime.scheduledStartTime, delaySeconds: leg.realtime.departureDelaySeconds }
+                  }
+                  marker={<Dot color={i === 0 ? ORIGIN_COLOR : color} />}
+                >
                   <Typography variant="body1" fontWeight={500} noWrap>
                     {i === 0 ? (originLabel ?? 'Origen') : leg.from.name}
                   </Typography>
@@ -157,11 +185,15 @@ export function ItineraryDetail({ itinerary, originLabel, destinationLabel, onBa
                     </Typography>
                   </Box>
                 ) : (
-                  <TransitContent leg={leg} now={now} />
+                  <TransitContent leg={leg} now={now} vehicle={vehicleOf(leg)} />
                 )}
               </Row>
               {!isWalk(leg) && (
-                <Row time={leg.endTime} marker={<Dot color={color} />}>
+                <Row
+                  time={leg.endTime}
+                  realtime={leg.realtime && { scheduled: leg.realtime.scheduledEndTime, delaySeconds: leg.realtime.arrivalDelaySeconds }}
+                  marker={<Dot color={color} />}
+                >
                   <Typography variant="body1" fontWeight={500} noWrap>
                     {leg.to.name}
                   </Typography>

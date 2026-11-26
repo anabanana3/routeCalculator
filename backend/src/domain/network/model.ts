@@ -45,6 +45,8 @@ export interface Trip {
 /** Horarios de un viaje, con las paradas en orden de secuencia. */
 export interface TripTimes {
   stops: Int32Array;
+  /** stop_sequence original de cada parada (para casar los datos en tiempo real). */
+  seq: Int32Array;
   arr: Int32Array;
   dep: Int32Array;
   /** shape_dist_traveled por parada (NaN si falta) o null si no hay datos. */

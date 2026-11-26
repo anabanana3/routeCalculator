@@ -33,6 +33,28 @@ export interface RouteInfo {
   agencyName?: string;
 }
 
+export interface AlertInfo {
+  id: string;
+  header: string;
+  description: string;
+  url: string;
+  cause: string;
+  effect: string;
+  severity: string;
+}
+
+/** Datos en tiempo real de un tramo en vehículo. */
+export interface LegRealtime {
+  /** epoch ms */
+  scheduledStartTime: number;
+  /** epoch ms */
+  scheduledEndTime: number;
+  /** Positivo = retraso; negativo = adelanto. */
+  departureDelaySeconds: number;
+  arrivalDelaySeconds: number;
+  vehicleId?: string;
+}
+
 export interface Leg {
   mode: LegMode;
   from: Place;
@@ -50,6 +72,10 @@ export interface Leg {
   intermediateStops?: Place[];
   /** Próximas salidas (epoch ms) de la misma línea y sentido desde la parada de subida. */
   nextDepartures?: number[];
+  /** Solo si las horas del tramo vienen de GTFS-Realtime. */
+  realtime?: LegRealtime;
+  /** Avisos vigentes que afectan a la línea, al viaje o a las paradas de subida y bajada. */
+  alerts?: AlertInfo[];
 }
 
 export interface Itinerary {
@@ -80,4 +106,6 @@ export interface TripPlan {
   itineraries: Itinerary[];
   /** Motivo por el que no hay itinerarios (solo si la lista está vacía). */
   noRouteReason?: NoRouteReason;
+  /** epoch ms de los datos en tiempo real usados (ausente si no se han usado). */
+  realtimeUpdatedAt?: number;
 }

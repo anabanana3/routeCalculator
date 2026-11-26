@@ -14,6 +14,8 @@ import { GeolocationError } from '../ports/geolocation';
 import { useServices } from '../services';
 
 export const SERVER_UNREACHABLE = 'No se puede conectar con el servidor';
+/** Con tiempo real y "Salir ahora", cada cuánto se recalcula la ruta para actualizar retrasos. */
+export const REALTIME_PLAN_REFRESH_MS = 60_000;
 
 let focusCounter = 0;
 const focusKey = (prefix: string) => `${prefix}-${++focusCounter}`;
@@ -37,10 +39,15 @@ export function useTripPlanner(now: () => Date = () => new Date()) {
   const [focus, setFocus] = useState<MapFocus | null>(null);
   const [ignoreCalendar, setIgnoreCalendar] = useState(false);
   const [timeZone, setTimeZone] = useState<string | undefined>();
+  /** Segundos entre actualizaciones del tiempo real (null = no configurado en el backend). */
+  const [realtimeRefreshSeconds, setRealtimeRefreshSeconds] = useState<number | null>(null);
+  const [refreshTick, setRefreshTick] = useState(0);
 
   // Para comprobar, al volver la geocodificación inversa, que el punto no ha cambiado.
   const placesRef = useRef({ origin, destination });
   placesRef.current = { origin, destination };
+  // Clave de la última búsqueda completada: si se repite, el nuevo cálculo es un refresco del tiempo real.
+  const lastSearchRef = useRef('');
 
   // Encuadre inicial con la zona cubierta por el GTFS.
   useEffect(() => {
@@ -50,6 +57,7 @@ export function useTripPlanner(now: () => Date = () => new Date()) {
       .then((info) => {
         setTimeZone(info.timezone);
         setIgnoreCalendar(info.ignoreServiceCalendar === true);
+        setRealtimeRefreshSeconds(info.realtime?.enabled ? info.realtime.refreshSeconds : null);
         if (info.bounds) {
           const b = info.bounds;
           setFocus({ key: 'gtfs', bounds: [[b.minLat, b.minLon], [b.maxLat, b.maxLon]] });
@@ -61,34 +69,57 @@ export function useTripPlanner(now: () => Date = () => new Date()) {
     return () => controller.abort();
   }, [api]);
 
+  const hasRoute = origin !== null && destination !== null;
+  // Con "Salir ahora" y tiempo real, se recalcula periódicamente (si la pestaña está visible).
+  useEffect(() => {
+    if (realtimeRefreshSeconds === null || departMode !== 'now' || !hasRoute) return;
+    const id = setInterval(() => {
+      if (document.visibilityState !== 'hidden') setRefreshTick((n) => n + 1);
+    }, REALTIME_PLAN_REFRESH_MS);
+    return () => clearInterval(id);
+  }, [realtimeRefreshSeconds, departMode, hasRoute]);
+
   // Cálculo automático cuando cambian las coordenadas o la hora (no cuando solo cambia el nombre mostrado).
   useEffect(() => {
     const request = buildPlanRequest(origin, destination, departMode, departAt);
     if (!request) {
       setPlan(null);
+      lastSearchRef.current = '';
       return;
     }
+    const searchKey = JSON.stringify(request);
+    const isRefresh = searchKey === lastSearchRef.current;
     const controller = new AbortController();
-    setLoading(true);
-    setError(null);
+    if (!isRefresh) {
+      setLoading(true);
+      setError(null);
+    }
     api
       .plan(request, controller.signal)
       .then((res) => {
+        lastSearchRef.current = searchKey;
         setTimeZone(res.timezone);
         setPlan(res);
+        if (isRefresh) {
+          // Refresco silencioso: se mantiene lo que el usuario estaba viendo si sigue existiendo.
+          const keep = (i: number | null) => (i !== null && i < res.itineraries.length ? i : null);
+          setHighlighted((h) => keep(h) ?? 0);
+          setSelected((s) => keep(s));
+          return;
+        }
         setHighlighted(0);
         setSelected(null);
         const all = itinerariesGeometry(res.itineraries);
         if (all.length > 0) setFocus({ key: focusKey('plan'), bounds: boundsOf(all) });
       })
       .catch((err: Error) => {
-        if (err.name !== 'AbortError') setError(err.message);
+        if (err.name !== 'AbortError' && !isRefresh) setError(err.message);
       })
       .finally(() => {
         if (!controller.signal.aborted) setLoading(false);
       });
     return () => controller.abort();
-  }, [api, origin?.lat, origin?.lon, destination?.lat, destination?.lon, departMode, departAt]);
+  }, [api, origin?.lat, origin?.lon, destination?.lat, destination?.lon, departMode, departAt, refreshTick]);
 
   const setPlace = useCallback((field: PointField, place: SelectedPlace | null) => {
     if (field === 'origin') setOrigin(place);
@@ -192,6 +223,7 @@ export function useTripPlanner(now: () => Date = () => new Date()) {
     focus,
     ignoreCalendar,
     timeZone,
+    realtimeRefreshSeconds,
     itineraries,
     shown,
     searchFocus,

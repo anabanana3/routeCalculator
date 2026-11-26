@@ -31,11 +31,16 @@ const PLAN: TripPlan = {
 
 function deps(overrides: Partial<HttpDependencies> = {}) {
   return {
-    planTrip: { execute: vi.fn(() => ({ plan: PLAN, computeMs: 7 })) },
+    planTrip: { execute: vi.fn(async () => ({ plan: PLAN, computeMs: 7 })) },
     getFeedInfo: { execute: vi.fn(() => FEED_INFO) },
     reloadFeed: { execute: vi.fn(() => 'started' as const) },
     searchPlaces: { execute: vi.fn(async () => ({ results: [place('Sol', { secondary: 'Madrid' })] })) },
     reverseGeocode: { execute: vi.fn(async () => place('Gran Vía')) },
+    getVehicles: {
+      execute: vi.fn((_tripIds: string[]) => [
+        { tripId: 'T1', lat: 40.4, lon: -3.7, bearing: 90, timestamp: Date.parse('2026-03-02T07:00:00Z'), stopName: 'Sol' },
+      ]),
+    },
     security: SECURITY,
     ...overrides,
   };
@@ -190,6 +195,29 @@ describe('GET /api/geocode/*', () => {
   it('errores inesperados del caso de uso -> 500', async () => {
     const { url } = await start(deps({ searchPlaces: { execute: async () => Promise.reject(new Error('boom')) } }));
     expect((await fetch(`${url}/api/geocode/search?q=sol`)).status).toBe(500);
+  });
+});
+
+describe('GET /api/realtime/vehicles', () => {
+  it('devuelve los vehículos de los viajes pedidos', async () => {
+    const { url, d } = await start();
+    const res = await fetch(`${url}/api/realtime/vehicles?tripIds=T1,%20T2,,`);
+    expect(res.status).toBe(200);
+    expect(res.headers.get('cache-control')).toBe('no-store');
+    expect(await res.json()).toEqual({
+      vehicles: [{ tripId: 'T1', lat: 40.4, lon: -3.7, bearing: 90, timestamp: '2026-03-02T07:00:00.000Z', stopName: 'Sol' }],
+    });
+    expect(d.getVehicles.execute).toHaveBeenCalledWith(['T1', 'T2']);
+  });
+
+  it('400 sin viajes, con demasiados o con el parámetro repetido', async () => {
+    const { url, d } = await start();
+    expect((await fetch(`${url}/api/realtime/vehicles`)).status).toBe(400);
+    expect((await fetch(`${url}/api/realtime/vehicles?tripIds=,`)).status).toBe(400);
+    const many = Array.from({ length: 21 }, (_, i) => `T${i}`).join(',');
+    expect((await fetch(`${url}/api/realtime/vehicles?tripIds=${many}`)).status).toBe(400);
+    expect((await fetch(`${url}/api/realtime/vehicles?tripIds=a&tripIds=b`)).status).toBe(400);
+    expect(d.getVehicles.execute).not.toHaveBeenCalled();
   });
 });
 

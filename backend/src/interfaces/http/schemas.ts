@@ -23,6 +23,20 @@ export const reverseSchema = z.object({
   lon: z.coerce.number().min(-180).max(180),
 });
 
+/** ?tripIds=a,b,c (como mucho 20 viajes). */
+export const vehiclesSchema = z.object({
+  tripIds: z
+    .string()
+    .max(4000)
+    .transform((s) =>
+      s
+        .split(',')
+        .map((id) => id.trim())
+        .filter(Boolean),
+    )
+    .pipe(z.array(z.string().max(200)).min(1).max(20)),
+});
+
 export interface ValidationIssue {
   path: string;
   message: string;

@@ -46,6 +46,27 @@ export interface RouteDto {
   agencyName?: string;
 }
 
+export interface AlertDto {
+  id: string;
+  header: string;
+  description?: string;
+  url?: string;
+  /** Valores de GTFS-Realtime: Alert.Cause, Alert.Effect y Alert.SeverityLevel. */
+  cause: string;
+  effect: string;
+  severity: string;
+}
+
+/** Horas del tramo según GTFS-Realtime (startTime/endTime ya son las previstas). */
+export interface LegRealtimeDto {
+  scheduledStartTime: string;
+  scheduledEndTime: string;
+  /** Positivo = retraso; negativo = adelanto. */
+  departureDelaySeconds: number;
+  arrivalDelaySeconds: number;
+  vehicleId?: string;
+}
+
 export interface LegDto {
   mode: LegMode;
   from: PlaceDto;
@@ -62,6 +83,8 @@ export interface LegDto {
   intermediateStops?: PlaceDto[];
   /** Próximas salidas de la misma línea y sentido desde la parada de subida (ISO). */
   nextDepartures?: string[];
+  realtime?: LegRealtimeDto;
+  alerts?: AlertDto[];
 }
 
 export interface ItineraryDto {
@@ -80,6 +103,24 @@ export interface PlanResponse {
   timezone: string;
   itineraries: ItineraryDto[];
   message?: string;
+  /** Momento de los datos en tiempo real usados (ausente si el cálculo usa solo horarios programados). */
+  realtimeUpdatedAt?: string;
+}
+
+export interface RealtimeFeedStatusDto {
+  name: string;
+  lastUpdatedAt?: string;
+  feedTimestamp?: string;
+  entities: number;
+  stale: boolean;
+  error: boolean;
+}
+
+export interface RealtimeInfoDto {
+  enabled: boolean;
+  refreshSeconds: number;
+  paused: boolean;
+  feeds: RealtimeFeedStatusDto[];
 }
 
 export interface GtfsInfoDto {
@@ -96,6 +137,28 @@ export interface GtfsInfoDto {
   bounds?: { minLat: number; minLon: number; maxLat: number; maxLon: number };
   /** Modo depuración: se ignora el calendario de servicios. */
   ignoreServiceCalendar?: boolean;
+  realtime?: RealtimeInfoDto;
+}
+
+export type VehicleStatus = 'INCOMING_AT' | 'STOPPED_AT' | 'IN_TRANSIT_TO';
+
+export interface VehicleDto {
+  tripId: string;
+  lat: number;
+  lon: number;
+  /** Grados desde el norte en sentido horario. */
+  bearing?: number;
+  /** m/s */
+  speed?: number;
+  label?: string;
+  /** Momento de la posición (ISO). */
+  timestamp?: string;
+  status?: VehicleStatus;
+  stopName?: string;
+}
+
+export interface VehiclesResponse {
+  vehicles: VehicleDto[];
 }
 
 export type GeocodeKind = 'address' | 'street' | 'poi' | 'stop';

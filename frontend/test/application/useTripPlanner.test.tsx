@@ -1,7 +1,7 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { GeolocationError } from '../../src/application/ports/geolocation';
-import { SERVER_UNREACHABLE, useTripPlanner } from '../../src/application/hooks/useTripPlanner';
+import { REALTIME_PLAN_REFRESH_MS, SERVER_UNREACHABLE, useTripPlanner } from '../../src/application/hooks/useTripPlanner';
 import { GEOLOCATION_MESSAGES } from '../../src/domain/trip-search';
 import { deferred, fakeApi, fakeGeolocation, GTFS_INFO, PLAN, place, servicesWrapper, TRANSIT_ITINERARY, TZ } from '../fixtures';
 
@@ -248,5 +248,90 @@ describe('useTripPlanner: ubicación, intercambio y selección', () => {
 
     act(() => result.current.back());
     expect(result.current.selected).toBeNull();
+  });
+});
+
+describe('useTripPlanner: tiempo real', () => {
+  const RT_INFO = { ...GTFS_INFO, realtime: { enabled: true, refreshSeconds: 20, paused: false, feeds: [] } };
+
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+    Object.defineProperty(document, 'visibilityState', { value: 'visible', configurable: true });
+  });
+
+  // waitFor usa setInterval, que aquí está simulado: se vacían las promesas a mano.
+  const flush = async () => {
+    for (let i = 0; i < 3; i++) await act(async () => {});
+  };
+
+  async function planned(api = fakeApi({ gtfsInfo: async () => RT_INFO })) {
+    const hook = setup(api);
+    await flush();
+    expect(hook.result.current.realtimeRefreshSeconds).toBe(20);
+    act(() => hook.result.current.choosePlace('origin', A));
+    act(() => hook.result.current.choosePlace('destination', B));
+    await flush();
+    expect(hook.result.current.plan).not.toBeNull();
+    return hook;
+  }
+
+  it('sin tiempo real en el backend no hay refresco', async () => {
+    const { result } = setup();
+    await flush();
+    expect(result.current.timeZone).toBe(TZ);
+    expect(result.current.realtimeRefreshSeconds).toBeNull();
+  });
+
+  it('con "Salir ahora" recalcula en silencio manteniendo la selección y el encuadre', async () => {
+    const { result, api } = await planned();
+    act(() => result.current.selectItinerary(1));
+    const focus = result.current.focus;
+    const updated = { ...PLAN, realtimeUpdatedAt: '2026-03-02T07:01:00Z' };
+    api.plan.mockImplementationOnce(async () => updated);
+    act(() => vi.advanceTimersByTime(REALTIME_PLAN_REFRESH_MS));
+    expect(result.current.loading).toBe(false);
+    await flush();
+    expect(result.current.plan).toBe(updated);
+    expect(api.plan).toHaveBeenCalledTimes(2);
+    expect(result.current.selected).toBe(1);
+    expect(result.current.focus).toBe(focus);
+  });
+
+  it('si el nuevo plan tiene menos itinerarios vuelve a la lista', async () => {
+    const { result, api } = await planned();
+    act(() => result.current.selectItinerary(1));
+    act(() => result.current.setHighlighted(1));
+    api.plan.mockImplementationOnce(async () => ({ ...PLAN, itineraries: [TRANSIT_ITINERARY] }));
+    act(() => vi.advanceTimersByTime(REALTIME_PLAN_REFRESH_MS));
+    await flush();
+    expect(result.current.itineraries).toHaveLength(1);
+    expect(result.current.selected).toBeNull();
+    expect(result.current.highlighted).toBe(0);
+  });
+
+  it('un error al refrescar no borra el plan', async () => {
+    const { result, api } = await planned();
+    api.plan.mockImplementationOnce(async () => Promise.reject(new Error('caído')));
+    act(() => vi.advanceTimersByTime(REALTIME_PLAN_REFRESH_MS));
+    await flush();
+    expect(api.plan).toHaveBeenCalledTimes(2);
+    expect(result.current.error).toBeNull();
+    expect(result.current.plan).toEqual(PLAN);
+  });
+
+  it('no refresca con hora de salida fija ni con la pestaña oculta', async () => {
+    const { result, api } = await planned();
+    Object.defineProperty(document, 'visibilityState', { value: 'hidden', configurable: true });
+    act(() => vi.advanceTimersByTime(REALTIME_PLAN_REFRESH_MS));
+    expect(api.plan).toHaveBeenCalledTimes(1);
+    Object.defineProperty(document, 'visibilityState', { value: 'visible', configurable: true });
+    act(() => result.current.setDepartMode('at'));
+    await flush();
+    expect(api.plan).toHaveBeenCalledTimes(2);
+    act(() => vi.advanceTimersByTime(REALTIME_PLAN_REFRESH_MS * 3));
+    expect(api.plan).toHaveBeenCalledTimes(2);
   });
 });

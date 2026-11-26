@@ -26,6 +26,21 @@ export interface AppConfig {
     zipLimits: ZipLimits;
   };
   routing: RoutingOptions;
+  realtime: {
+    /** URLs de los feeds GTFS-Realtime (vacías = no se usan). Pueden coincidir si el proveedor da un único feed. */
+    tripUpdatesUrl: string;
+    vehiclePositionsUrl: string;
+    alertsUrl: string;
+    refreshSeconds: number;
+    /** Minutos sin peticiones tras los que se pausa la descarga (0 = nunca). */
+    idleMinutes: number;
+    /** Antigüedad máxima de los datos para usarlos (0 = sin límite). */
+    maxAgeSeconds: number;
+    timeoutMs: number;
+    maxDownloadBytes: number;
+    headers: Record<string, string>;
+    language: string;
+  };
   geocoding: {
     provider: GeocoderKind;
     url: string;
@@ -56,6 +71,9 @@ export class ConfigError extends Error {
 
 const MB = 1024 * 1024;
 const MIN_ADMIN_TOKEN_LENGTH = 16;
+/** Mínimo entre descargas de GTFS-Realtime, para no saturar al proveedor. */
+export const MIN_RT_REFRESH_SECONDS = 5;
+const HEADER_NAME = /^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/;
 
 export function loadConfig(env: Env, cwd: string = process.cwd()): AppConfig {
   const str = (name: string, def = ''): string => {
@@ -99,6 +117,12 @@ export function loadConfig(env: Env, cwd: string = process.cwd()): AppConfig {
     throw new ConfigError(`ADMIN_TOKEN debe tener al menos ${MIN_ADMIN_TOKEN_LENGTH} caracteres`);
   }
 
+  const rtUrl = (name: string): string => {
+    const value = str(name);
+    if (value) assertHttpUrl(name, value);
+    return value;
+  };
+
   return {
     port: num('PORT', 3000, 0),
     host: str('HOST') || undefined,
@@ -129,6 +153,18 @@ export function loadConfig(env: Env, cwd: string = process.cwd()): AppConfig {
       maxSearchHours: num('MAX_SEARCH_HOURS', 6, 0),
       ignoreServiceCalendar: bool('DEBUG_IGNORE_CALENDAR'),
     },
+    realtime: {
+      tripUpdatesUrl: rtUrl('GTFS_RT_TRIP_UPDATES_URL'),
+      vehiclePositionsUrl: rtUrl('GTFS_RT_VEHICLE_POSITIONS_URL'),
+      alertsUrl: rtUrl('GTFS_RT_ALERTS_URL'),
+      refreshSeconds: num('GTFS_RT_REFRESH_SECONDS', 30, MIN_RT_REFRESH_SECONDS),
+      idleMinutes: num('GTFS_RT_IDLE_MINUTES', 10, 0),
+      maxAgeSeconds: num('GTFS_RT_MAX_AGE_SECONDS', 300, 0),
+      timeoutMs: num('GTFS_RT_TIMEOUT_MS', 10_000, 1),
+      maxDownloadBytes: num('GTFS_RT_MAX_DOWNLOAD_MB', 20, 1) * MB,
+      headers: parseHeaders('GTFS_RT_HEADERS', str('GTFS_RT_HEADERS')),
+      language: str('GTFS_RT_LANGUAGE', 'es'),
+    },
     geocoding: {
       provider,
       url: geocoderUrl,
@@ -158,6 +194,28 @@ function assertHttpUrl(name: string, value: string): void {
   if (url.protocol !== 'http:' && url.protocol !== 'https:') {
     throw new ConfigError(`${name} debe usar http o https`);
   }
+}
+
+/** Cabeceras HTTP en JSON: {"x-api-key": "..."}. */
+export function parseHeaders(name: string, value: string): Record<string, string> {
+  if (value === '') return {};
+  let raw: unknown;
+  try {
+    raw = JSON.parse(value);
+  } catch {
+    throw new ConfigError(`${name} debe ser un objeto JSON, p. ej. {"x-api-key":"..."}`);
+  }
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+    throw new ConfigError(`${name} debe ser un objeto JSON, p. ej. {"x-api-key":"..."}`);
+  }
+  const headers: Record<string, string> = {};
+  for (const [key, v] of Object.entries(raw)) {
+    if (!HEADER_NAME.test(key) || typeof v !== 'string' || /[\r\n]/.test(v)) {
+      throw new ConfigError(`${name} contiene una cabecera no válida: ${key}`);
+    }
+    headers[key] = v;
+  }
+  return headers;
 }
 
 /** "" / false -> no se confía en proxies; número -> saltos; otro texto -> lista de IPs/subredes de Express. */

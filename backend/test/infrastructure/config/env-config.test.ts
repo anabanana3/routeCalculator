@@ -119,6 +119,64 @@ describe('loadConfig', () => {
   it('niveles de log desconocidos pasan a info', () => {
     expect(loadConfig({ LOG_LEVEL: 'verbose' }, CWD).logLevel).toBe('info');
   });
+
+  it('GTFS-Realtime desactivado por defecto', () => {
+    expect(loadConfig({}, CWD).realtime).toEqual({
+      tripUpdatesUrl: '',
+      vehiclePositionsUrl: '',
+      alertsUrl: '',
+      refreshSeconds: 30,
+      idleMinutes: 10,
+      maxAgeSeconds: 300,
+      timeoutMs: 10_000,
+      maxDownloadBytes: 20 * MB,
+      headers: {},
+      language: 'es',
+    });
+  });
+
+  it('lee la configuración de GTFS-Realtime', () => {
+    const c = loadConfig(
+      {
+        GTFS_RT_TRIP_UPDATES_URL: 'https://rt.example/tu',
+        GTFS_RT_VEHICLE_POSITIONS_URL: 'https://rt.example/vp',
+        GTFS_RT_ALERTS_URL: 'https://rt.example/al',
+        GTFS_RT_REFRESH_SECONDS: '15',
+        GTFS_RT_IDLE_MINUTES: '0',
+        GTFS_RT_MAX_AGE_SECONDS: '120',
+        GTFS_RT_TIMEOUT_MS: '5000',
+        GTFS_RT_MAX_DOWNLOAD_MB: '2',
+        GTFS_RT_HEADERS: '{"x-api-key":"secreto","Authorization":"Bearer abc"}',
+        GTFS_RT_LANGUAGE: 'ca',
+      },
+      CWD,
+    );
+    expect(c.realtime).toEqual({
+      tripUpdatesUrl: 'https://rt.example/tu',
+      vehiclePositionsUrl: 'https://rt.example/vp',
+      alertsUrl: 'https://rt.example/al',
+      refreshSeconds: 15,
+      idleMinutes: 0,
+      maxAgeSeconds: 120,
+      timeoutMs: 5000,
+      maxDownloadBytes: 2 * MB,
+      headers: { 'x-api-key': 'secreto', Authorization: 'Bearer abc' },
+      language: 'ca',
+    });
+  });
+
+  it.each([
+    [{ GTFS_RT_TRIP_UPDATES_URL: 'ftp://x' }, /GTFS_RT_TRIP_UPDATES_URL debe usar http o https/],
+    [{ GTFS_RT_ALERTS_URL: 'basura' }, /GTFS_RT_ALERTS_URL no es una URL válida/],
+    [{ GTFS_RT_REFRESH_SECONDS: '1' }, /GTFS_RT_REFRESH_SECONDS debe ser >= 5/],
+    [{ GTFS_RT_HEADERS: 'x-api-key: 1' }, /GTFS_RT_HEADERS debe ser un objeto JSON/],
+    [{ GTFS_RT_HEADERS: '["a"]' }, /GTFS_RT_HEADERS debe ser un objeto JSON/],
+    [{ GTFS_RT_HEADERS: '{"mal nombre":"1"}' }, /cabecera no válida: mal nombre/],
+    [{ GTFS_RT_HEADERS: '{"x-n":1}' }, /cabecera no válida: x-n/],
+    [{ GTFS_RT_HEADERS: '{"x-n":"a\\r\\nb"}' }, /cabecera no válida: x-n/],
+  ])('rechaza configuraciones de GTFS-Realtime inválidas %o', (env, message) => {
+    expect(() => loadConfig(env, CWD)).toThrow(message);
+  });
 });
 
 describe('parseTrustProxy', () => {

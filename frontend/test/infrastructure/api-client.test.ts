@@ -47,6 +47,12 @@ describe('createHttpTransitApi', () => {
     expect(String(fetchFn.mock.calls[0][0])).toBe('https://api.test/api/geocode/reverse?lat=40.4&lon=-3.7');
   });
 
+  it('vehicles pide la posición de los viajes indicados', async () => {
+    const { api, fetchFn } = setup({ vehicles: [] });
+    expect(await api.vehicles(['T1', 'T 2'])).toEqual({ vehicles: [] });
+    expect(String(fetchFn.mock.calls[0][0])).toBe('https://api.test/api/realtime/vehicles?tripIds=T1%2CT+2');
+  });
+
   it('usa el mensaje de error del servidor', async () => {
     const { api } = setup({ error: 'Los datos GTFS todavía no están cargados' }, 503);
     const err = await api.gtfsInfo().catch((e: unknown) => e);

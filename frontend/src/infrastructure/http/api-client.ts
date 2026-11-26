@@ -4,6 +4,7 @@ import type {
   GeocodeSearchResponse,
   GtfsInfoDto,
   PlanResponse,
+  VehiclesResponse,
 } from '../../domain/types/api';
 
 export class ApiError extends Error {
@@ -52,6 +53,10 @@ export function createHttpTransitApi(baseUrl: string, fetchFn: FetchFn = (...arg
     geocodeReverse: (p, signal) => {
       const params = new URLSearchParams({ lat: String(p.lat), lon: String(p.lon) });
       return request<GeocodeReverseResponse>(`/api/geocode/reverse?${params}`, { signal });
+    },
+    vehicles: (tripIds, signal) => {
+      const params = new URLSearchParams({ tripIds: tripIds.join(',') });
+      return request<VehiclesResponse>(`/api/realtime/vehicles?${params}`, { signal });
     },
   };
 }

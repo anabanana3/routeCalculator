@@ -102,6 +102,7 @@ export function fakeApi(overrides: Partial<TransitApi> = {}): ApiMocks {
     plan: vi.fn<TransitApi['plan']>(overrides.plan ?? (async () => PLAN)),
     geocodeSearch: vi.fn<TransitApi['geocodeSearch']>(overrides.geocodeSearch ?? (async () => ({ results: [] }))),
     geocodeReverse: vi.fn<TransitApi['geocodeReverse']>(overrides.geocodeReverse ?? (async () => ({ result: null }))),
+    vehicles: vi.fn<TransitApi['vehicles']>(overrides.vehicles ?? (async () => ({ vehicles: [] }))),
   };
 }
 

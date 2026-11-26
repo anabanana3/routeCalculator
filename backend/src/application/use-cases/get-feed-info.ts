@@ -1,4 +1,5 @@
 import type { Bounds } from '../../domain/geo/geo.js';
+import type { RealtimeStatus } from '../services/realtime-store.js';
 import type { NetworkStatus, TransitNetworkStore } from '../services/transit-network-store.js';
 
 export interface FeedInfo {
@@ -8,6 +9,7 @@ export interface FeedInfo {
   stats?: { stops: number; routes: number; trips: number; connections: number };
   bounds?: Bounds;
   ignoreServiceCalendar: boolean;
+  realtime?: RealtimeStatus;
 }
 
 /** Caso de uso: estado y estadísticas del feed GTFS cargado. */
@@ -15,6 +17,7 @@ export class GetFeedInfoUseCase {
   constructor(
     private readonly store: Pick<TransitNetworkStore, 'current' | 'status'>,
     private readonly ignoreServiceCalendar: boolean,
+    private readonly realtime?: { status(): RealtimeStatus },
   ) {}
 
   execute(): FeedInfo {
@@ -33,6 +36,7 @@ export class GetFeedInfoUseCase {
         : undefined,
       bounds: network?.bounds ?? undefined,
       ignoreServiceCalendar: this.ignoreServiceCalendar,
+      realtime: this.realtime?.status(),
     };
   }
 }
